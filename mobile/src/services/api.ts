@@ -179,7 +179,7 @@ class ApiClient {
     }>('/store/items');
   }
 
-  async redeemItem(itemId: string) {
+  async redeemItem(itemId: string, email?: string) {
     return this.request<{
       message: string;
       item: any;
@@ -187,7 +187,7 @@ class ApiClient {
       newBalance: number;
     }>('/store/redeem', {
       method: 'POST',
-      body: JSON.stringify({ itemId }),
+      body: JSON.stringify({ itemId, email }),
     });
   }
 

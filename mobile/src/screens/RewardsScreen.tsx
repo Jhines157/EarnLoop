@@ -8,6 +8,8 @@ import {
   TouchableOpacity,
   Alert,
   Animated,
+  TextInput,
+  Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -44,10 +46,13 @@ const RewardsScreen = () => {
   const { colors } = useTheme();
   const [categories, setCategories] = useState<Category[]>([]);
   const [itemsByCategory, setItemsByCategory] = useState<Record<string, StoreItem[]>>({});
-  const [selectedCategory, setSelectedCategory] = useState<string>('cosmetics');
+  const [selectedCategory, setSelectedCategory] = useState<string>('giftcards');
   const [refreshing, setRefreshing] = useState(false);
   const [loading, setLoading] = useState(true);
   const [redeeming, setRedeeming] = useState<string | null>(null);
+  const [giftCardModal, setGiftCardModal] = useState(false);
+  const [selectedGiftCard, setSelectedGiftCard] = useState<StoreItem | null>(null);
+  const [email, setEmail] = useState('');
 
   useEffect(() => {
     loadStoreItems();
@@ -94,6 +99,14 @@ const RewardsScreen = () => {
       return;
     }
 
+    // Gift cards need email confirmation
+    if (item.itemType === 'giftcard') {
+      setSelectedGiftCard(item);
+      setEmail('');
+      setGiftCardModal(true);
+      return;
+    }
+
     Alert.alert(
       `Get ${item.name}?`,
       `This will cost ${item.creditsCost.toLocaleString()} credits.`,
@@ -121,6 +134,40 @@ const RewardsScreen = () => {
         },
       ]
     );
+  };
+
+  const handleGiftCardRedeem = async () => {
+    if (!selectedGiftCard) return;
+    
+    // Validate email
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!email || !emailRegex.test(email)) {
+      Alert.alert('Invalid Email', 'Please enter a valid email address to receive your gift card code.');
+      return;
+    }
+
+    setGiftCardModal(false);
+    setRedeeming(selectedGiftCard.id);
+
+    try {
+      const response = await api.redeemItem(selectedGiftCard.id, email);
+      if (response.success && response.data) {
+        updateBalance(response.data.newBalance);
+        Alert.alert(
+          '🎁 Gift Card Requested!',
+          `Your ${selectedGiftCard.name} has been requested!\n\nYou'll receive your gift card code at:\n${email}\n\nPlease allow up to 24-48 hours for delivery.`,
+          [{ text: 'Awesome!' }]
+        );
+        loadStoreItems();
+      } else {
+        Alert.alert('Error', response.error?.message || 'Redemption failed');
+      }
+    } catch (error) {
+      Alert.alert('Error', 'Something went wrong');
+    } finally {
+      setRedeeming(null);
+      setSelectedGiftCard(null);
+    }
   };
 
   const formatDuration = (days: number | null) => {
@@ -302,13 +349,61 @@ const RewardsScreen = () => {
         <View style={styles.infoCard}>
           <Text style={styles.infoTitle}>ℹ️ About the Store</Text>
           <Text style={styles.infoText}>
-            • Rewards are in-app perks only{'\n'}
-            • Cannot be exchanged for cash{'\n'}
+            • Gift cards are delivered digitally via email{'\n'}
+            • In-app rewards are cosmetic perks only{'\n'}
             • Streak Savers protect your streak automatically{'\n'}
-            • XP Boosts double earnings from ads
+            • Gift cards may take 24-48 hours to process
           </Text>
         </View>
       </ScrollView>
+
+      {/* Gift Card Email Modal */}
+      <Modal
+        visible={giftCardModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setGiftCardModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalIcon}>{selectedGiftCard?.icon || '🎁'}</Text>
+            <Text style={styles.modalTitle}>Redeem {selectedGiftCard?.name}</Text>
+            <Text style={styles.modalSubtitle}>
+              Cost: {selectedGiftCard?.creditsCost.toLocaleString()} credits
+            </Text>
+            
+            <Text style={styles.modalLabel}>Enter your email address:</Text>
+            <TextInput
+              style={styles.emailInput}
+              placeholder="your@email.com"
+              placeholderTextColor={colors.textSecondary}
+              value={email}
+              onChangeText={setEmail}
+              keyboardType="email-address"
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+            <Text style={styles.modalNote}>
+              Your gift card code will be sent to this email within 24-48 hours.
+            </Text>
+
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={styles.modalCancelButton}
+                onPress={() => setGiftCardModal(false)}
+              >
+                <Text style={styles.modalCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.modalConfirmButton}
+                onPress={handleGiftCardRedeem}
+              >
+                <Text style={styles.modalConfirmText}>Confirm</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 };
@@ -539,6 +634,89 @@ const createStyles = (colors: any) => StyleSheet.create({
     ...typography.caption,
     color: colors.textSecondary,
     lineHeight: 18,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: spacing.lg,
+  },
+  modalContent: {
+    backgroundColor: colors.backgroundCard,
+    borderRadius: borderRadius.xl,
+    padding: spacing.xl,
+    width: '100%',
+    maxWidth: 340,
+    alignItems: 'center',
+  },
+  modalIcon: {
+    fontSize: 48,
+    marginBottom: spacing.sm,
+  },
+  modalTitle: {
+    ...typography.h2,
+    color: colors.textPrimary,
+    textAlign: 'center',
+    marginBottom: spacing.xs,
+  },
+  modalSubtitle: {
+    ...typography.body,
+    color: colors.primary,
+    fontWeight: '600',
+    marginBottom: spacing.lg,
+  },
+  modalLabel: {
+    ...typography.bodySmall,
+    color: colors.textSecondary,
+    alignSelf: 'flex-start',
+    marginBottom: spacing.xs,
+  },
+  emailInput: {
+    width: '100%',
+    backgroundColor: colors.backgroundSecondary,
+    borderRadius: borderRadius.md,
+    padding: spacing.md,
+    color: colors.textPrimary,
+    ...typography.body,
+    borderWidth: 1,
+    borderColor: colors.border,
+    marginBottom: spacing.sm,
+  },
+  modalNote: {
+    ...typography.caption,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    marginBottom: spacing.lg,
+  },
+  modalButtons: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    width: '100%',
+  },
+  modalCancelButton: {
+    flex: 1,
+    padding: spacing.md,
+    borderRadius: borderRadius.md,
+    backgroundColor: colors.backgroundSecondary,
+    alignItems: 'center',
+  },
+  modalCancelText: {
+    ...typography.body,
+    color: colors.textSecondary,
+    fontWeight: '600',
+  },
+  modalConfirmButton: {
+    flex: 1,
+    padding: spacing.md,
+    borderRadius: borderRadius.md,
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+  },
+  modalConfirmText: {
+    ...typography.body,
+    color: '#fff',
+    fontWeight: '600',
   },
 });
 

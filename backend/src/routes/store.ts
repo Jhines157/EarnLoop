@@ -62,9 +62,10 @@ router.get('/items', async (req: AuthRequest, res: Response, next: NextFunction)
 
     // Category display info
     const categories = [
+      { id: 'giftcards', name: 'Gift Cards', icon: '🎁', description: 'Redeem for real rewards' },
       { id: 'cosmetics', name: 'Cosmetics', icon: '🎨', description: 'Themes & customization' },
       { id: 'gamification', name: 'Boosts & Power-ups', icon: '🎮', description: 'Level up faster' },
-      { id: 'giveaways', name: 'Giveaway Perks', icon: '🎁', description: 'Improve your odds' },
+      { id: 'giveaways', name: 'Giveaway Perks', icon: '🎟️', description: 'Improve your odds' },
       { id: 'premium', name: 'Premium Content', icon: '📚', description: 'Exclusive lessons' },
       { id: 'vip', name: 'VIP', icon: '👑', description: 'Status & recognition' },
     ];
@@ -86,7 +87,7 @@ router.get('/items', async (req: AuthRequest, res: Response, next: NextFunction)
 router.post('/redeem', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const userId = req.userId!;
-    const { itemId } = req.body;
+    const { itemId, email } = req.body;
 
     if (!itemId) {
       return next(createError('Item ID required', 400, 'MISSING_ITEM_ID'));
@@ -103,6 +104,17 @@ router.post('/redeem', async (req: AuthRequest, res: Response, next: NextFunctio
     }
 
     const item = itemResult.rows[0];
+
+    // Gift cards require email
+    if (item.item_type === 'giftcard') {
+      if (!email) {
+        return next(createError('Email required for gift card redemption', 400, 'EMAIL_REQUIRED'));
+      }
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(email)) {
+        return next(createError('Invalid email address', 400, 'INVALID_EMAIL'));
+      }
+    }
 
     // Get user's balance
     const balanceResult = await pool.query(
@@ -134,11 +146,11 @@ router.post('/redeem', async (req: AuthRequest, res: Response, next: NextFunctio
       expiresAt.setDate(expiresAt.getDate() + item.duration_days);
     }
 
-    // Create redemption record
+    // Create redemption record (with email for gift cards)
     await pool.query(
-      `INSERT INTO redemptions (user_id, item_id, credits_spent, expires_at)
-       VALUES ($1, $2, $3, $4)`,
-      [userId, itemId, item.credits_cost, expiresAt]
+      `INSERT INTO redemptions (user_id, item_id, credits_spent, expires_at, delivery_email, status)
+       VALUES ($1, $2, $3, $4, $5, $6)`,
+      [userId, itemId, item.credits_cost, expiresAt, email || null, item.item_type === 'giftcard' ? 'pending' : 'completed']
     );
 
     // Deduct credits
@@ -155,6 +167,13 @@ router.post('/redeem', async (req: AuthRequest, res: Response, next: NextFunctio
     let specialMessage = '';
     
     switch (item.item_type) {
+      case 'giftcard':
+        // Gift card request - will be fulfilled manually or via API integration
+        specialMessage = `Gift card request received! Your ${item.name} code will be sent to ${email} within 24-48 hours.`;
+        // TODO: Send notification email to admin or integrate with gift card API
+        console.log(`🎁 GIFT CARD REQUEST: ${item.name} for user ${userId}, deliver to: ${email}`);
+        break;
+        
       case 'consumable':
         // Add to inventory (streak savers, etc.)
         await pool.query(`

@@ -214,6 +214,15 @@ const migrate = async () => {
     `);
     console.log('✅ giveaway_entries updated_at column added');
 
+    // Add gift card columns to redemptions table
+    await pool.query(`
+      ALTER TABLE redemptions 
+      ADD COLUMN IF NOT EXISTS delivery_email VARCHAR(255),
+      ADD COLUMN IF NOT EXISTS gift_card_code VARCHAR(255),
+      ADD COLUMN IF NOT EXISTS fulfilled_at TIMESTAMP WITH TIME ZONE;
+    `);
+    console.log('✅ redemptions gift card columns added');
+
     console.log('🎉 All migrations completed successfully!');
   } catch (error) {
     console.error('❌ Migration failed:', error);
