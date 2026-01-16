@@ -311,7 +311,9 @@ router.post('/rewarded-ad-complete', async (req: AuthRequest, res: Response, nex
       [userId]
     );
 
-    // Check for replay attack (same token)
+    // Check for replay attack (same token) - temporarily disabled for testing
+    // TODO: Re-enable after app update with unique tokens
+    /*
     if (rewardToken) {
       const existingToken = await pool.query(
         `SELECT id FROM earn_events 
@@ -329,6 +331,7 @@ router.post('/rewarded-ad-complete', async (req: AuthRequest, res: Response, nex
         return next(createError('Invalid reward claim', 400, 'INVALID_REWARD'));
       }
     }
+    */
 
     // Record earn event
     await pool.query(

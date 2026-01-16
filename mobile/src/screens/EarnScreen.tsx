@@ -110,9 +110,11 @@ const EarnScreen = () => {
       await adMobService.showAd({
         onEarnedReward: async (reward) => {
           try {
+            // Generate unique token using timestamp + random
+            const uniqueToken = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
             const response = await api.completeRewardedAd(
               'rewarded-ad-unit',
-              reward.type
+              uniqueToken
             );
             if (response.success && response.data) {
               updateBalance(response.data.newBalance);
