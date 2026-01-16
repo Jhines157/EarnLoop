@@ -19,17 +19,17 @@ const TEST_AD_UNITS = {
 };
 
 // Production Ad Unit IDs - EarnLoop
-// App ID: ca-app-pub-8186263051960596~1744762202
+// App ID: ca-app-pub-8186263051960596~6781669729
 const PRODUCTION_AD_UNITS = {
   ios: {
-    rewarded: 'ca-app-pub-8186263051960596/4714007640',
-    interstitial: 'ca-app-pub-8186263051960596/4714007640', // Use rewarded for now
-    banner: 'ca-app-pub-8186263051960596/4714007640',
+    rewarded: 'ca-app-pub-8186263051960596/2549908533',
+    interstitial: 'ca-app-pub-8186263051960596/2549908533', // Use rewarded for now
+    banner: 'ca-app-pub-8186263051960596/2549908533',
   },
   android: {
-    rewarded: 'ca-app-pub-8186263051960596/4714007640',
-    interstitial: 'ca-app-pub-8186263051960596/4714007640',
-    banner: 'ca-app-pub-8186263051960596/4714007640',
+    rewarded: 'ca-app-pub-8186263051960596/2549908533',
+    interstitial: 'ca-app-pub-8186263051960596/2549908533',
+    banner: 'ca-app-pub-8186263051960596/2549908533',
   },
 };
 
