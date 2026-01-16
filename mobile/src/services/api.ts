@@ -117,7 +117,7 @@ class ApiClient {
   async getMe() {
     return this.request<{
       user: any;
-      balance: { current: number; lifetimeEarned: number; lifetimeSpent: number };
+      balance: { current: number; lifetimeEarned: number; lifetimeSpent: number; tokens: number };
       streak: { current: number; longest: number; lastCheckin: string | null };
     }>('/me');
   }
