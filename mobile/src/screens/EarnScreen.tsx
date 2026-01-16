@@ -80,7 +80,8 @@ const EarnScreen = () => {
           longest: response.data.streak.longest_streak,
         });
         setEarnStatus(prev => ({ ...prev, checkedInToday: true }));
-        Alert.alert('Check-In Complete! ✅', `You earned ${response.data.creditsEarned} credits!`);
+        const tokensMsg = response.data.tokensEarned ? `\n+${response.data.tokensEarned} Fun Tokens! 🎰` : '';
+        Alert.alert('Check-In Complete! ✅', `You earned ${response.data.creditsEarned} credits!${tokensMsg}`);
       } else {
         Alert.alert('Error', response.error?.message || 'Check-in failed');
       }
@@ -118,7 +119,8 @@ const EarnScreen = () => {
             );
             if (response.success && response.data) {
               updateBalance(response.data.newBalance);
-              Alert.alert('Ad Complete! 🎬', `You earned ${response.data.creditsEarned} credits!`);
+              const tokensMsg = response.data.tokensEarned ? `\n+${response.data.tokensEarned} Fun Token! 🎰` : '';
+              Alert.alert('Ad Complete! 🎬', `You earned ${response.data.creditsEarned} credits!${tokensMsg}`);
               loadEarnStatus();
             } else {
               Alert.alert('Error', response.error?.message || 'Failed to process ad reward');

@@ -84,9 +84,10 @@ const LearnScreen: React.FC<LearnScreenProps> = ({ onComplete }) => {
       
       if (response.success && response.data) {
         updateBalance(response.data.newBalance);
+        const tokensMsg = response.data.tokensEarned ? `\n+${response.data.tokensEarned} Fun Tokens! 🎰` : '';
         Alert.alert(
           'Congratulations! 🎉',
-          `You scored ${score}% and earned ${response.data.creditsEarned} credits!`,
+          `You scored ${score}% and earned ${response.data.creditsEarned} credits!${tokensMsg}`,
           [{ text: 'Continue', onPress: () => {
             setSelectedModule(null);
             onComplete?.();
