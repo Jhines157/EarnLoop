@@ -26,10 +26,10 @@ router.get('/', async (req: AuthRequest, res: Response, next: NextFunction) => {
 
     // Get balance
     const balanceResult = await pool.query(
-      'SELECT credits_balance, lifetime_earned, lifetime_spent FROM balances WHERE user_id = $1',
+      'SELECT credits_balance, lifetime_earned, lifetime_spent, COALESCE(tokens, 100) as tokens FROM balances WHERE user_id = $1',
       [userId]
     );
-    const balance = balanceResult.rows[0] || { credits_balance: 0, lifetime_earned: 0, lifetime_spent: 0 };
+    const balance = balanceResult.rows[0] || { credits_balance: 0, lifetime_earned: 0, lifetime_spent: 0, tokens: 100 };
 
     // Get streak
     const streakResult = await pool.query(
@@ -57,6 +57,7 @@ router.get('/', async (req: AuthRequest, res: Response, next: NextFunction) => {
           current: balance.credits_balance,
           lifetimeEarned: balance.lifetime_earned,
           lifetimeSpent: balance.lifetime_spent,
+          tokens: balance.tokens,
         },
         streak: {
           current: streak.current_streak,

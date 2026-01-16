@@ -14,6 +14,7 @@ interface Balance {
   current: number;
   lifetimeEarned: number;
   lifetimeSpent: number;
+  tokens: number; // Fun tokens for jackpot/cosmetics (no cash value)
 }
 
 interface Streak {
@@ -36,10 +37,11 @@ interface AuthContextType extends AuthState {
   logout: () => Promise<void>;
   refreshUser: () => Promise<void>;
   updateBalance: (newBalance: number) => void;
+  updateTokens: (newTokens: number) => void;
   updateStreak: (newStreak: { current: number; longest: number }) => void;
 }
 
-const defaultBalance: Balance = { current: 0, lifetimeEarned: 0, lifetimeSpent: 0 };
+const defaultBalance: Balance = { current: 0, lifetimeEarned: 0, lifetimeSpent: 0, tokens: 100 };
 const defaultStreak: Streak = { current: 0, longest: 0, lastCheckin: null };
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -162,6 +164,13 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }));
   };
 
+  const updateTokens = (newTokens: number) => {
+    setState(prev => ({
+      ...prev,
+      balance: { ...prev.balance, tokens: newTokens },
+    }));
+  };
+
   const updateStreak = (newStreak: { current: number; longest: number }) => {
     setState(prev => ({
       ...prev,
@@ -178,6 +187,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         logout,
         refreshUser,
         updateBalance,
+        updateTokens,
         updateStreak,
       }}
     >

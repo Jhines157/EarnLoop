@@ -14,7 +14,7 @@ import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import api from '../services/api';
 import { spacing, borderRadius, typography } from '../utils/theme';
-import { SAMPLE_GIVEAWAYS, Giveaway, JACKPOT_CONFIG } from '../data/gamification';
+import { SAMPLE_GIVEAWAYS, Giveaway, JACKPOT_CONFIG, TOKEN_STORE_ITEMS } from '../data/gamification';
 
 const ENTRY_COST = 50; // Credits per additional entry
 const BONUS_COOLDOWN_HOURS = 12; // Hours between bonus entries
@@ -30,7 +30,7 @@ interface EntryData {
 }
 
 const RaffleScreen = () => {
-  const { balance, updateBalance, refreshUser } = useAuth();
+  const { balance, updateBalance, updateTokens, refreshUser } = useAuth();
   const { colors } = useTheme();
   // Track user's entries with cooldown info
   const [myEntries, setMyEntries] = useState<Record<string, EntryData>>({});
@@ -80,15 +80,16 @@ const RaffleScreen = () => {
     return () => clearInterval(interval);
   }, []);
 
-  // Jackpot spin function
+  // Jackpot spin function - Uses TOKENS (not credits)
   const spinJackpot = async () => {
     if (jackpotBet < JACKPOT_CONFIG.minEntry || jackpotBet > JACKPOT_CONFIG.maxEntry) {
-      Alert.alert('Invalid Bet', `Bet must be between ${JACKPOT_CONFIG.minEntry} and ${JACKPOT_CONFIG.maxEntry} credits`);
+      Alert.alert('Invalid Bet', `Bet must be between ${JACKPOT_CONFIG.minEntry} and ${JACKPOT_CONFIG.maxEntry} tokens`);
       return;
     }
     
-    if (balance.current < jackpotBet) {
-      Alert.alert('Not Enough Credits', `You need ${jackpotBet} credits. You have ${balance.current}.`);
+    const currentTokens = balance.tokens || 0;
+    if (currentTokens < jackpotBet) {
+      Alert.alert('Not Enough Tokens', `You need ${jackpotBet} tokens. You have ${currentTokens}.\n\nEarn more tokens from daily check-ins and watching ads!`);
       return;
     }
     
@@ -104,10 +105,10 @@ const RaffleScreen = () => {
       // JACKPOT WIN!
       const winnings = jackpotPool;
       setLastResult({ multiplier: -1, winnings }); // -1 indicates jackpot
-      updateBalance(balance.current - jackpotBet + winnings);
+      updateTokens(currentTokens - jackpotBet + winnings);
       setJackpotPool(JACKPOT_CONFIG.jackpotPool); // Reset pool
       setIsSpinning(false);
-      Alert.alert('🎰 JACKPOT!!! 🎰', `YOU WON THE JACKPOT!\n\n+${winnings.toLocaleString()} CREDITS!`, [
+      Alert.alert('🎰 JACKPOT!!! 🎰', `YOU WON THE JACKPOT!\n\n+${winnings.toLocaleString()} TOKENS!`, [
         { text: 'Amazing!', style: 'default' }
       ]);
       return;
@@ -135,17 +136,17 @@ const RaffleScreen = () => {
     }
     
     setLastResult({ multiplier: selectedMultiplier, winnings });
-    updateBalance(balance.current + netChange);
+    updateTokens(currentTokens + netChange);
     setIsSpinning(false);
     
     if (selectedMultiplier === 0) {
-      Alert.alert('💔 No Luck', `You lost ${jackpotBet} credits. Better luck next time!`);
+      Alert.alert('💔 No Luck', `You lost ${jackpotBet} tokens. Better luck next time!`);
     } else if (selectedMultiplier < 1) {
-      Alert.alert('😅 Partial Return', `You got ${winnings} credits back (${selectedMultiplier}x)`);
+      Alert.alert('😅 Partial Return', `You got ${winnings} tokens back (${selectedMultiplier}x)`);
     } else if (selectedMultiplier === 1) {
-      Alert.alert('😌 Break Even', `You got your ${jackpotBet} credits back!`);
+      Alert.alert('😌 Break Even', `You got your ${jackpotBet} tokens back!`);
     } else {
-      Alert.alert(`🎉 ${selectedMultiplier}x WIN!`, `You won ${winnings} credits! (+${netChange} profit)`);
+      Alert.alert(`🎉 ${selectedMultiplier}x WIN!`, `You won ${winnings} tokens! (+${netChange} profit)`);
     }
   };
 
@@ -155,7 +156,8 @@ const RaffleScreen = () => {
   };
 
   const setMaxBet = () => {
-    setJackpotBet(Math.min(JACKPOT_CONFIG.maxEntry, balance.current));
+    const currentTokens = balance.tokens || 0;
+    setJackpotBet(Math.min(JACKPOT_CONFIG.maxEntry, currentTokens));
   };
 
   // Update cooldown timers every second
@@ -412,13 +414,20 @@ const RaffleScreen = () => {
           <Text style={styles.creditsSubtext}>= {Math.floor(balance.current / ENTRY_COST)} extra entries available</Text>
         </View>
 
+        {/* Tokens Balance */}
+        <View style={[styles.creditsCard, { backgroundColor: colors.warning }]}>
+          <Text style={styles.creditsLabel}>🎰 Fun Tokens</Text>
+          <Text style={styles.creditsAmount}>{(balance.tokens || 0).toLocaleString()}</Text>
+          <Text style={styles.creditsSubtext}>Use for Jackpot & Token Store (no cash value)</Text>
+        </View>
+
         {/* 🎰 JACKPOT SECTION */}
-        <Text style={styles.sectionTitle}>🎰 Credit Jackpot</Text>
+        <Text style={styles.sectionTitle}>🎰 Token Jackpot</Text>
         <View style={[styles.raffleCard, { borderColor: colors.warning, borderWidth: 2 }]}>
           <View style={styles.jackpotHeader}>
             <Text style={styles.jackpotTitle}>💰 JACKPOT POOL 💰</Text>
             <Text style={styles.jackpotAmount}>{jackpotPool.toLocaleString()}</Text>
-            <Text style={styles.jackpotSubtext}>credits up for grabs!</Text>
+            <Text style={styles.jackpotSubtext}>tokens up for grabs!</Text>
           </View>
           
           {/* Multiplier Info */}
@@ -489,9 +498,62 @@ const RaffleScreen = () => {
           </TouchableOpacity>
           
           <Text style={styles.jackpotDisclaimer}>
-            Entertainment only. Credits have no cash value.
+            Tokens have NO CASH VALUE. For entertainment only.
           </Text>
         </View>
+
+        {/* Token Store Section */}
+        <Text style={styles.sectionTitle}>🛒 Token Store</Text>
+        <Text style={[styles.subtitle, { marginBottom: spacing.md }]}>
+          Spend tokens on mystery bags, themes & boosts!
+        </Text>
+        
+        {TOKEN_STORE_ITEMS.map((item) => (
+          <View key={item.id} style={styles.tokenStoreItem}>
+            <Text style={styles.tokenStoreEmoji}>{item.emoji}</Text>
+            <View style={styles.tokenStoreInfo}>
+              <Text style={styles.tokenStoreName}>{item.name}</Text>
+              <Text style={styles.tokenStoreDesc}>{item.description}</Text>
+            </View>
+            <TouchableOpacity 
+              style={[
+                styles.tokenBuyButton,
+                (balance.tokens || 0) < item.tokenCost && styles.tokenBuyButtonDisabled
+              ]}
+              onPress={() => {
+                if ((balance.tokens || 0) < item.tokenCost) {
+                  Alert.alert('Not Enough Tokens', `You need ${item.tokenCost} tokens.`);
+                  return;
+                }
+                Alert.alert(
+                  'Purchase Item',
+                  `Spend ${item.tokenCost} tokens on ${item.name}?`,
+                  [
+                    { text: 'Cancel', style: 'cancel' },
+                    { 
+                      text: 'Buy', 
+                      onPress: () => {
+                        updateTokens((balance.tokens || 0) - item.tokenCost);
+                        if (item.category === 'mystery_bag') {
+                          // Random credits from mystery bag
+                          const minCredits = item.id.includes('small') ? 50 : item.id.includes('medium') ? 100 : 250;
+                          const maxCredits = item.id.includes('small') ? 200 : item.id.includes('medium') ? 500 : 1000;
+                          const wonCredits = Math.floor(Math.random() * (maxCredits - minCredits + 1)) + minCredits;
+                          updateBalance(balance.current + wonCredits);
+                          Alert.alert('🎁 Mystery Bag Opened!', `You won ${wonCredits} credits!`);
+                        } else {
+                          Alert.alert('✅ Purchased!', `${item.name} has been added to your account!`);
+                        }
+                      }
+                    }
+                  ]
+                );
+              }}
+            >
+              <Text style={styles.tokenBuyButtonText}>{item.tokenCost} 🎰</Text>
+            </TouchableOpacity>
+          </View>
+        ))}
 
         {/* Active Giveaways */}
         <Text style={styles.sectionTitle}>Active Giveaways</Text>
@@ -986,6 +1048,48 @@ const createStyles = (colors: any) => StyleSheet.create({
     textAlign: 'center',
     marginTop: spacing.sm,
     fontStyle: 'italic',
+  },
+  // Token Store Styles
+  tokenStoreItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.backgroundCard,
+    borderRadius: borderRadius.md,
+    padding: spacing.md,
+    marginBottom: spacing.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  tokenStoreEmoji: {
+    fontSize: 32,
+    marginRight: spacing.md,
+  },
+  tokenStoreInfo: {
+    flex: 1,
+  },
+  tokenStoreName: {
+    ...typography.body,
+    color: colors.textPrimary,
+    fontWeight: '600',
+  },
+  tokenStoreDesc: {
+    ...typography.caption,
+    color: colors.textSecondary,
+  },
+  tokenBuyButton: {
+    backgroundColor: colors.warning,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: borderRadius.sm,
+  },
+  tokenBuyButtonDisabled: {
+    backgroundColor: colors.textMuted,
+    opacity: 0.5,
+  },
+  tokenBuyButtonText: {
+    ...typography.caption,
+    color: '#000',
+    fontWeight: '700',
   },
 });
 

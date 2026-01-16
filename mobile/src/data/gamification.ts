@@ -257,12 +257,13 @@ export const SAMPLE_GIVEAWAYS: Giveaway[] = [
   },
 ];
 
-// Jackpot configuration
+// Jackpot configuration - Uses TOKENS (not credits)
+// Tokens have NO CASH VALUE and can only be used for cosmetics/mystery bags
 export interface JackpotConfig {
   id: string;
   name: string;
-  minEntry: number;           // Minimum credits to enter
-  maxEntry: number;           // Maximum credits per entry
+  minEntry: number;           // Minimum tokens to enter
+  maxEntry: number;           // Maximum tokens per entry
   multipliers: number[];      // Possible win multipliers [0, 0.5, 1, 2, 5, 10]
   multiplierWeights: number[];// Probability weights for each multiplier
   jackpotPool: number;        // Growing jackpot from losses
@@ -270,17 +271,86 @@ export interface JackpotConfig {
 }
 
 export const JACKPOT_CONFIG: JackpotConfig = {
-  id: 'credit_jackpot',
-  name: 'Credit Jackpot',
-  minEntry: 100,
-  maxEntry: 5000,
+  id: 'token_jackpot',
+  name: 'Token Jackpot',
+  minEntry: 10,
+  maxEntry: 500,
   // Multipliers: lose, half back, break even, 2x, 5x, 10x
   multipliers: [0, 0.5, 1, 2, 5, 10],
   // Weights (must sum to 100): 40% lose, 25% half, 20% even, 10% 2x, 4% 5x, 1% 10x
   multiplierWeights: [40, 25, 20, 10, 4, 1],
-  jackpotPool: 10000, // Starting jackpot (will grow from house edge)
+  jackpotPool: 1000, // Starting jackpot in tokens
   jackpotChance: 0.5, // 0.5% chance to win jackpot on any spin
 };
+
+// Token Store Items (cosmetics, mystery bags - NO cash value redemption)
+export interface TokenStoreItem {
+  id: string;
+  name: string;
+  description: string;
+  tokenCost: number;
+  category: 'cosmetic' | 'mystery_bag' | 'boost';
+  emoji: string;
+}
+
+export const TOKEN_STORE_ITEMS: TokenStoreItem[] = [
+  {
+    id: 'mystery_bag_small',
+    name: 'Small Mystery Bag',
+    description: 'Contains 50-200 bonus credits!',
+    tokenCost: 50,
+    category: 'mystery_bag',
+    emoji: '🎁',
+  },
+  {
+    id: 'mystery_bag_medium',
+    name: 'Medium Mystery Bag',
+    description: 'Contains 100-500 bonus credits!',
+    tokenCost: 100,
+    category: 'mystery_bag',
+    emoji: '🎀',
+  },
+  {
+    id: 'mystery_bag_large',
+    name: 'Large Mystery Bag',
+    description: 'Contains 250-1000 bonus credits!',
+    tokenCost: 200,
+    category: 'mystery_bag',
+    emoji: '🎊',
+  },
+  {
+    id: 'theme_dark_gold',
+    name: 'Dark Gold Theme',
+    description: 'Exclusive dark gold app theme',
+    tokenCost: 150,
+    category: 'cosmetic',
+    emoji: '🌟',
+  },
+  {
+    id: 'theme_neon',
+    name: 'Neon Theme',
+    description: 'Vibrant neon color scheme',
+    tokenCost: 150,
+    category: 'cosmetic',
+    emoji: '💜',
+  },
+  {
+    id: 'badge_vip',
+    name: 'VIP Badge',
+    description: 'Show off your VIP status',
+    tokenCost: 300,
+    category: 'cosmetic',
+    emoji: '👑',
+  },
+  {
+    id: 'boost_2x_1hr',
+    name: '2x Boost (1 Hour)',
+    description: 'Double credits for 1 hour!',
+    tokenCost: 75,
+    category: 'boost',
+    emoji: '⚡',
+  },
+];
 
 // Legacy export for backwards compatibility
 export type Raffle = Giveaway;
