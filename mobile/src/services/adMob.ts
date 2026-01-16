@@ -114,12 +114,11 @@ class AdMobService {
   }
 
   async showRewardedAd(): Promise<{ success: boolean; reward?: number }> {
-    // In Expo Go, simulate ad watching
+    // IMPORTANT: Only give rewards if a REAL ad was shown
+    // Never simulate in production builds
     if (!this.rewardedAd) {
-      console.log('📺 Simulating ad watch (Expo Go mode)');
-      // Simulate a 2-second ad
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      return { success: true, reward: 10 };
+      console.log('❌ No rewarded ad object - ads not available');
+      return { success: false };
     }
 
     if (!this.isAdReady) {
@@ -145,8 +144,8 @@ class AdMobService {
   }
 
   isRewardedAdReady(): boolean {
-    // In Expo Go, always return true (we'll simulate)
-    if (!this.rewardedAd) return true;
+    // Only return true if we have a real ad object AND it's ready
+    if (!this.rewardedAd) return false;
     return this.isAdReady;
   }
 
