@@ -33,6 +33,22 @@ app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
+// AdMob SSV Callback - MUST be before authenticated routes
+// This is called by Google's servers, not the app
+app.get('/earn/admob-ssv', (req, res) => {
+  console.log('📺 AdMob SSV callback received at server level:', req.query);
+  
+  // For verification ping from AdMob console (no params), return 200
+  if (!req.query.transaction_id && !req.query.user_id) {
+    console.log('✅ AdMob SSV verification ping - OK');
+    return res.status(200).send('OK');
+  }
+  
+  // For actual callbacks, forward to the earn router
+  // This shouldn't be reached as the earn router handles it
+  res.status(200).send('OK');
+});
+
 // API Routes
 app.use('/auth', authRoutes);
 app.use('/earn', earnRoutes);
