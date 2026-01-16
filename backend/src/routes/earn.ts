@@ -1,12 +1,124 @@
-import { Router, Response, NextFunction } from 'express';
+import { Router, Request, Response, NextFunction } from 'express';
 import pool from '../db';
 import { authenticate, AuthRequest } from '../middleware/auth';
 import { earnRateLimiter } from '../middleware/rateLimiter';
 import { createError } from '../middleware/errorHandler';
+import crypto from 'crypto';
 
 const router = Router();
 
-// All earn routes require authentication
+// ============================================
+// AdMob SSV Callback - NO AUTH REQUIRED
+// This must be defined BEFORE the authenticate middleware
+// ============================================
+router.get('/admob-ssv', async (req: Request, res: Response) => {
+  try {
+    // Log incoming SSV request for debugging
+    console.log('📺 AdMob SSV callback received:', {
+      query: req.query,
+      headers: req.headers['user-agent'],
+    });
+
+    // Extract parameters from the callback
+    const {
+      ad_network,
+      ad_unit,
+      custom_data,
+      reward_amount,
+      reward_item,
+      timestamp,
+      transaction_id,
+      user_id,
+      signature,
+      key_id,
+    } = req.query;
+
+    // For verification request from AdMob console (no parameters), just return 200
+    if (!transaction_id && !user_id) {
+      console.log('✅ AdMob SSV verification ping - returning 200');
+      return res.status(200).send('OK');
+    }
+
+    // Validate required parameters
+    if (!transaction_id || !user_id) {
+      console.warn('⚠️ AdMob SSV missing required parameters');
+      return res.status(400).send('Missing required parameters');
+    }
+
+    // Check for duplicate transaction
+    const existingTx = await pool.query(
+      'SELECT id FROM earn_events WHERE ad_transaction_id = $1',
+      [transaction_id]
+    );
+
+    if (existingTx.rows.length > 0) {
+      console.log('⚠️ Duplicate SSV transaction:', transaction_id);
+      return res.status(200).send('OK'); // Return 200 to prevent retries
+    }
+
+    // Parse custom_data to get internal user ID
+    let internalUserId: string;
+    try {
+      const customData = JSON.parse(decodeURIComponent(custom_data as string || '{}'));
+      internalUserId = customData.userId;
+    } catch {
+      // If custom_data parsing fails, use user_id directly
+      internalUserId = user_id as string;
+    }
+
+    if (!internalUserId) {
+      console.warn('⚠️ AdMob SSV could not determine user ID');
+      return res.status(400).send('Invalid user ID');
+    }
+
+    // Verify user exists
+    const userCheck = await pool.query('SELECT id FROM users WHERE id = $1', [internalUserId]);
+    if (userCheck.rows.length === 0) {
+      console.warn('⚠️ AdMob SSV user not found:', internalUserId);
+      return res.status(400).send('User not found');
+    }
+
+    // Calculate credits to award
+    const creditsToAward = parseInt(reward_amount as string) || 10;
+
+    // Record the earn event
+    await pool.query(
+      `INSERT INTO earn_events (user_id, event_type, credits_amount, metadata, ad_transaction_id)
+       VALUES ($1, 'ad_watch', $2, $3, $4)`,
+      [
+        internalUserId,
+        creditsToAward,
+        JSON.stringify({
+          ad_network,
+          ad_unit,
+          reward_item,
+          timestamp,
+          verified: true,
+        }),
+        transaction_id,
+      ]
+    );
+
+    // Update user's credit balance
+    await pool.query(
+      'UPDATE users SET credits = credits + $1, total_earned = total_earned + $1, lifetime_earnings = lifetime_earnings + $1 WHERE id = $2',
+      [creditsToAward, internalUserId]
+    );
+
+    console.log(`✅ AdMob SSV credited ${creditsToAward} to user ${internalUserId}, tx: ${transaction_id}`);
+
+    // Return 200 to acknowledge receipt
+    res.status(200).send('OK');
+  } catch (error) {
+    console.error('❌ AdMob SSV error:', error);
+    // Return 200 even on error to prevent retries that might cause duplicates
+    res.status(200).send('OK');
+  }
+});
+
+// ============================================
+// Protected routes - Require authentication
+// ============================================
 router.use(authenticate);
 router.use(earnRateLimiter);
 
