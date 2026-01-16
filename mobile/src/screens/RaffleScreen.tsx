@@ -14,7 +14,7 @@ import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import api from '../services/api';
 import { spacing, borderRadius, typography } from '../utils/theme';
-import { SAMPLE_GIVEAWAYS, Giveaway } from '../data/gamification';
+import { SAMPLE_GIVEAWAYS, Giveaway, JACKPOT_CONFIG } from '../data/gamification';
 
 const ENTRY_COST = 50; // Credits per additional entry
 const BONUS_COOLDOWN_HOURS = 12; // Hours between bonus entries
@@ -37,10 +37,126 @@ const RaffleScreen = () => {
   const [cooldownTimers, setCooldownTimers] = useState<Record<string, string>>({});
   const [refreshing, setRefreshing] = useState(false);
   const [loading, setLoading] = useState(true);
+  
+  // Jackpot state
+  const [jackpotPool, setJackpotPool] = useState(JACKPOT_CONFIG.jackpotPool);
+  const [jackpotBet, setJackpotBet] = useState(JACKPOT_CONFIG.minEntry);
+  const [isSpinning, setIsSpinning] = useState(false);
+  const [lastResult, setLastResult] = useState<{multiplier: number, winnings: number} | null>(null);
+  
+  // Simulated live participants (updates every few seconds)
+  const [liveParticipants, setLiveParticipants] = useState<Record<string, number>>({});
 
   useEffect(() => {
     loadEntries();
+    // Initialize live participant counts
+    const initialCounts: Record<string, number> = {};
+    SAMPLE_GIVEAWAYS.forEach(g => {
+      initialCounts[g.id] = g.totalParticipants;
+    });
+    setLiveParticipants(initialCounts);
   }, []);
+  
+  // Simulate live participant updates
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setLiveParticipants(prev => {
+        const updated = { ...prev };
+        SAMPLE_GIVEAWAYS.forEach(g => {
+          // Random chance to add 1-3 participants
+          if (Math.random() > 0.7) {
+            updated[g.id] = (updated[g.id] || g.totalParticipants) + Math.floor(Math.random() * 3) + 1;
+          }
+        });
+        return updated;
+      });
+      
+      // Occasionally increase jackpot pool
+      if (Math.random() > 0.8) {
+        setJackpotPool(prev => prev + Math.floor(Math.random() * 100) + 50);
+      }
+    }, 5000);
+    
+    return () => clearInterval(interval);
+  }, []);
+
+  // Jackpot spin function
+  const spinJackpot = async () => {
+    if (jackpotBet < JACKPOT_CONFIG.minEntry || jackpotBet > JACKPOT_CONFIG.maxEntry) {
+      Alert.alert('Invalid Bet', `Bet must be between ${JACKPOT_CONFIG.minEntry} and ${JACKPOT_CONFIG.maxEntry} credits`);
+      return;
+    }
+    
+    if (balance.current < jackpotBet) {
+      Alert.alert('Not Enough Credits', `You need ${jackpotBet} credits. You have ${balance.current}.`);
+      return;
+    }
+    
+    setIsSpinning(true);
+    setLastResult(null);
+    
+    // Simulate spin animation delay
+    await new Promise(resolve => setTimeout(resolve, 2000));
+    
+    // Check for jackpot first
+    const jackpotRoll = Math.random() * 100;
+    if (jackpotRoll < JACKPOT_CONFIG.jackpotChance) {
+      // JACKPOT WIN!
+      const winnings = jackpotPool;
+      setLastResult({ multiplier: -1, winnings }); // -1 indicates jackpot
+      updateBalance(balance.current - jackpotBet + winnings);
+      setJackpotPool(JACKPOT_CONFIG.jackpotPool); // Reset pool
+      setIsSpinning(false);
+      Alert.alert('🎰 JACKPOT!!! 🎰', `YOU WON THE JACKPOT!\n\n+${winnings.toLocaleString()} CREDITS!`, [
+        { text: 'Amazing!', style: 'default' }
+      ]);
+      return;
+    }
+    
+    // Regular spin - pick multiplier based on weights
+    const roll = Math.random() * 100;
+    let cumulative = 0;
+    let selectedMultiplier = 0;
+    
+    for (let i = 0; i < JACKPOT_CONFIG.multipliers.length; i++) {
+      cumulative += JACKPOT_CONFIG.multiplierWeights[i];
+      if (roll < cumulative) {
+        selectedMultiplier = JACKPOT_CONFIG.multipliers[i];
+        break;
+      }
+    }
+    
+    const winnings = Math.floor(jackpotBet * selectedMultiplier);
+    const netChange = winnings - jackpotBet;
+    
+    // Add losses to jackpot pool
+    if (netChange < 0) {
+      setJackpotPool(prev => prev + Math.abs(netChange));
+    }
+    
+    setLastResult({ multiplier: selectedMultiplier, winnings });
+    updateBalance(balance.current + netChange);
+    setIsSpinning(false);
+    
+    if (selectedMultiplier === 0) {
+      Alert.alert('💔 No Luck', `You lost ${jackpotBet} credits. Better luck next time!`);
+    } else if (selectedMultiplier < 1) {
+      Alert.alert('😅 Partial Return', `You got ${winnings} credits back (${selectedMultiplier}x)`);
+    } else if (selectedMultiplier === 1) {
+      Alert.alert('😌 Break Even', `You got your ${jackpotBet} credits back!`);
+    } else {
+      Alert.alert(`🎉 ${selectedMultiplier}x WIN!`, `You won ${winnings} credits! (+${netChange} profit)`);
+    }
+  };
+
+  const adjustBet = (amount: number) => {
+    const newBet = Math.max(JACKPOT_CONFIG.minEntry, Math.min(JACKPOT_CONFIG.maxEntry, jackpotBet + amount));
+    setJackpotBet(newBet);
+  };
+
+  const setMaxBet = () => {
+    setJackpotBet(Math.min(JACKPOT_CONFIG.maxEntry, balance.current));
+  };
 
   // Update cooldown timers every second
   useEffect(() => {
@@ -296,6 +412,87 @@ const RaffleScreen = () => {
           <Text style={styles.creditsSubtext}>= {Math.floor(balance.current / ENTRY_COST)} extra entries available</Text>
         </View>
 
+        {/* 🎰 JACKPOT SECTION */}
+        <Text style={styles.sectionTitle}>🎰 Credit Jackpot</Text>
+        <View style={[styles.raffleCard, { borderColor: colors.warning, borderWidth: 2 }]}>
+          <View style={styles.jackpotHeader}>
+            <Text style={styles.jackpotTitle}>💰 JACKPOT POOL 💰</Text>
+            <Text style={styles.jackpotAmount}>{jackpotPool.toLocaleString()}</Text>
+            <Text style={styles.jackpotSubtext}>credits up for grabs!</Text>
+          </View>
+          
+          {/* Multiplier Info */}
+          <View style={styles.multiplierInfo}>
+            <Text style={styles.multiplierTitle}>Win Multipliers:</Text>
+            <View style={styles.multiplierRow}>
+              <Text style={styles.multiplierBadge}>0x</Text>
+              <Text style={styles.multiplierBadge}>0.5x</Text>
+              <Text style={styles.multiplierBadge}>1x</Text>
+              <Text style={[styles.multiplierBadge, { backgroundColor: colors.success }]}>2x</Text>
+              <Text style={[styles.multiplierBadge, { backgroundColor: colors.warning }]}>5x</Text>
+              <Text style={[styles.multiplierBadge, { backgroundColor: colors.error }]}>10x</Text>
+            </View>
+            <Text style={styles.jackpotChance}>🍀 {JACKPOT_CONFIG.jackpotChance}% chance to win JACKPOT!</Text>
+          </View>
+          
+          {/* Bet Controls */}
+          <View style={styles.betControls}>
+            <Text style={styles.betLabel}>Your Bet:</Text>
+            <View style={styles.betRow}>
+              <TouchableOpacity style={styles.betButton} onPress={() => adjustBet(-100)}>
+                <Text style={styles.betButtonText}>-100</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.betButton} onPress={() => adjustBet(-10)}>
+                <Text style={styles.betButtonText}>-10</Text>
+              </TouchableOpacity>
+              <Text style={styles.betAmount}>{jackpotBet}</Text>
+              <TouchableOpacity style={styles.betButton} onPress={() => adjustBet(10)}>
+                <Text style={styles.betButtonText}>+10</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.betButton} onPress={() => adjustBet(100)}>
+                <Text style={styles.betButtonText}>+100</Text>
+              </TouchableOpacity>
+            </View>
+            <TouchableOpacity style={styles.maxBetButton} onPress={setMaxBet}>
+              <Text style={styles.maxBetText}>MAX BET</Text>
+            </TouchableOpacity>
+          </View>
+          
+          {/* Last Result */}
+          {lastResult && (
+            <View style={[styles.resultBanner, { 
+              backgroundColor: lastResult.multiplier === -1 ? colors.warning : 
+                              lastResult.multiplier >= 2 ? colors.success + '30' : 
+                              lastResult.multiplier >= 1 ? colors.primary + '30' : colors.error + '30' 
+            }]}>
+              <Text style={styles.resultText}>
+                {lastResult.multiplier === -1 ? '🎰 JACKPOT!!!' : 
+                 lastResult.multiplier >= 2 ? `🎉 ${lastResult.multiplier}x WIN!` :
+                 lastResult.multiplier >= 1 ? `😌 ${lastResult.multiplier}x` : '💔 Lost'}
+              </Text>
+              <Text style={styles.resultAmount}>
+                {lastResult.multiplier === -1 ? `+${lastResult.winnings.toLocaleString()} credits` :
+                 lastResult.winnings > 0 ? `${lastResult.winnings} credits` : 'Better luck next time'}
+              </Text>
+            </View>
+          )}
+          
+          {/* Spin Button */}
+          <TouchableOpacity 
+            style={[styles.spinButton, isSpinning && styles.spinButtonDisabled]}
+            onPress={spinJackpot}
+            disabled={isSpinning}
+          >
+            <Text style={styles.spinButtonText}>
+              {isSpinning ? '🎰 SPINNING...' : '🎰 SPIN TO WIN!'}
+            </Text>
+          </TouchableOpacity>
+          
+          <Text style={styles.jackpotDisclaimer}>
+            Entertainment only. Credits have no cash value.
+          </Text>
+        </View>
+
         {/* Active Giveaways */}
         <Text style={styles.sectionTitle}>Active Giveaways</Text>
 
@@ -318,7 +515,7 @@ const RaffleScreen = () => {
 
               <View style={styles.raffleStats}>
                 <View style={styles.stat}>
-                  <Text style={styles.statValue}>{giveaway.totalParticipants.toLocaleString()}</Text>
+                  <Text style={styles.statValue}>{(liveParticipants[giveaway.id] || giveaway.totalParticipants).toLocaleString()}</Text>
                   <Text style={styles.statLabel}>Participants</Text>
                 </View>
                 <View style={styles.stat}>
@@ -653,6 +850,142 @@ const createStyles = (colors: any) => StyleSheet.create({
     color: colors.textMuted,
     textAlign: 'center',
     marginTop: spacing.md,
+  },
+  // Jackpot Styles
+  jackpotHeader: {
+    alignItems: 'center',
+    paddingVertical: spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+    marginBottom: spacing.md,
+  },
+  jackpotTitle: {
+    ...typography.body,
+    color: colors.warning,
+    fontWeight: '700',
+  },
+  jackpotAmount: {
+    fontSize: 48,
+    fontWeight: '800',
+    color: colors.warning,
+    marginVertical: spacing.xs,
+  },
+  jackpotSubtext: {
+    ...typography.caption,
+    color: colors.textSecondary,
+  },
+  multiplierInfo: {
+    alignItems: 'center',
+    marginBottom: spacing.md,
+  },
+  multiplierTitle: {
+    ...typography.caption,
+    color: colors.textSecondary,
+    marginBottom: spacing.xs,
+  },
+  multiplierRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    gap: spacing.xs,
+  },
+  multiplierBadge: {
+    backgroundColor: colors.textMuted,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    borderRadius: borderRadius.sm,
+    color: colors.textPrimary,
+    fontWeight: '600',
+    fontSize: 12,
+    overflow: 'hidden',
+  },
+  jackpotChance: {
+    ...typography.caption,
+    color: colors.success,
+    marginTop: spacing.sm,
+    fontWeight: '600',
+  },
+  betControls: {
+    alignItems: 'center',
+    marginBottom: spacing.md,
+  },
+  betLabel: {
+    ...typography.body,
+    color: colors.textSecondary,
+    marginBottom: spacing.sm,
+  },
+  betRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  betButton: {
+    backgroundColor: colors.backgroundSecondary,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: borderRadius.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  betButtonText: {
+    ...typography.caption,
+    color: colors.textPrimary,
+    fontWeight: '600',
+  },
+  betAmount: {
+    fontSize: 28,
+    fontWeight: '700',
+    color: colors.primary,
+    minWidth: 100,
+    textAlign: 'center',
+  },
+  maxBetButton: {
+    marginTop: spacing.sm,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.xs,
+    backgroundColor: colors.warning + '30',
+    borderRadius: borderRadius.sm,
+  },
+  maxBetText: {
+    ...typography.caption,
+    color: colors.warning,
+    fontWeight: '700',
+  },
+  resultBanner: {
+    padding: spacing.md,
+    borderRadius: borderRadius.md,
+    alignItems: 'center',
+    marginBottom: spacing.md,
+  },
+  resultText: {
+    ...typography.body,
+    fontWeight: '700',
+    color: colors.textPrimary,
+  },
+  resultAmount: {
+    ...typography.caption,
+    color: colors.textSecondary,
+  },
+  spinButton: {
+    backgroundColor: colors.warning,
+    borderRadius: borderRadius.md,
+    padding: spacing.lg,
+    alignItems: 'center',
+  },
+  spinButtonDisabled: {
+    opacity: 0.6,
+  },
+  spinButtonText: {
+    ...typography.h3,
+    color: '#000',
+    fontWeight: '700',
+  },
+  jackpotDisclaimer: {
+    ...typography.caption,
+    color: colors.textMuted,
+    textAlign: 'center',
+    marginTop: spacing.sm,
+    fontStyle: 'italic',
   },
 });
 

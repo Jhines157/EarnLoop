@@ -204,6 +204,32 @@ export interface Giveaway {
   bonusRequirements: string;
 }
 
+// Helper to generate realistic participant counts based on time remaining
+const getRealisticParticipants = (daysLeft: number, baseParticipants: number): number => {
+  // More participants as deadline approaches
+  const dayFactor = Math.max(1, 30 - daysLeft) / 30;
+  const variance = Math.floor(Math.random() * 50) - 25; // ±25 variance
+  return Math.floor(baseParticipants * (0.3 + dayFactor * 0.7)) + variance;
+};
+
+// Calculate end date for weekly draws (next Sunday at midnight)
+const getNextWeeklyDraw = (): Date => {
+  const now = new Date();
+  const daysUntilSunday = (7 - now.getDay()) % 7 || 7;
+  const nextSunday = new Date(now);
+  nextSunday.setDate(now.getDate() + daysUntilSunday);
+  nextSunday.setHours(23, 59, 59, 999);
+  return nextSunday;
+};
+
+// Calculate end date for monthly draws (last day of month)
+const getNextMonthlyDraw = (): Date => {
+  const now = new Date();
+  const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+  lastDay.setHours(23, 59, 59, 999);
+  return lastDay;
+};
+
 // IMPORTANT: Giveaways are promotional events with NO PURCHASE NECESSARY
 // Bonus entries are earned through engagement activities, not by spending credits
 export const SAMPLE_GIVEAWAYS: Giveaway[] = [
@@ -214,22 +240,47 @@ export const SAMPLE_GIVEAWAYS: Giveaway[] = [
     prizeValue: '$50 Gift Card',
     freeEntries: 1, // Everyone gets 1 free entry
     bonusEntriesAvailable: 5, // Up to 5 bonus entries from engagement
-    endsAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-    totalParticipants: 1247,
+    endsAt: getNextMonthlyDraw(),
+    totalParticipants: getRealisticParticipants(15, 2500),
     bonusRequirements: 'Complete daily activities for bonus entries',
   },
   {
     id: 'weekly_bonus',
-    name: 'Weekly Bonus Drop',
+    name: 'Weekly Credit Drop',
     prize: 'Bonus Credits',
     prizeValue: '500 Bonus Credits',
     freeEntries: 1,
     bonusEntriesAvailable: 10,
-    endsAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
-    totalParticipants: 892,
+    endsAt: getNextWeeklyDraw(),
+    totalParticipants: getRealisticParticipants(3, 800),
     bonusRequirements: 'Watch ads and complete lessons for bonus entries',
   },
 ];
+
+// Jackpot configuration
+export interface JackpotConfig {
+  id: string;
+  name: string;
+  minEntry: number;           // Minimum credits to enter
+  maxEntry: number;           // Maximum credits per entry
+  multipliers: number[];      // Possible win multipliers [0, 0.5, 1, 2, 5, 10]
+  multiplierWeights: number[];// Probability weights for each multiplier
+  jackpotPool: number;        // Growing jackpot from losses
+  jackpotChance: number;      // % chance to win jackpot (0.1 = 0.1%)
+}
+
+export const JACKPOT_CONFIG: JackpotConfig = {
+  id: 'credit_jackpot',
+  name: 'Credit Jackpot',
+  minEntry: 100,
+  maxEntry: 5000,
+  // Multipliers: lose, half back, break even, 2x, 5x, 10x
+  multipliers: [0, 0.5, 1, 2, 5, 10],
+  // Weights (must sum to 100): 40% lose, 25% half, 20% even, 10% 2x, 4% 5x, 1% 10x
+  multiplierWeights: [40, 25, 20, 10, 4, 1],
+  jackpotPool: 10000, // Starting jackpot (will grow from house edge)
+  jackpotChance: 0.5, // 0.5% chance to win jackpot on any spin
+};
 
 // Legacy export for backwards compatibility
 export type Raffle = Giveaway;
