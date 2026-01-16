@@ -222,14 +222,16 @@ router.post('/checkin', async (req: AuthRequest, res: Response, next: NextFuncti
       [userId, req.deviceId, rewardAmount, req.ip]
     );
 
-    // Update balance
+    // Update balance (credits + tokens)
+    const tokenReward = 5; // Tokens for daily check-in
     await pool.query(
       `UPDATE balances 
        SET credits_balance = credits_balance + $1, 
            lifetime_earned = lifetime_earned + $1,
+           tokens = COALESCE(tokens, 100) + $2,
            updated_at = NOW()
-       WHERE user_id = $2`,
-      [rewardAmount, userId]
+       WHERE user_id = $3`,
+      [rewardAmount, tokenReward, userId]
     );
 
     // Update streak (considering streak saver)
@@ -253,9 +255,9 @@ router.post('/checkin', async (req: AuthRequest, res: Response, next: NextFuncti
       [userId, streakSaverUsed]
     );
 
-    // Get updated balance
+    // Get updated balance including tokens
     const balanceResult = await pool.query(
-      'SELECT credits_balance FROM balances WHERE user_id = $1',
+      'SELECT credits_balance, COALESCE(tokens, 100) as tokens FROM balances WHERE user_id = $1',
       [userId]
     );
 
@@ -263,7 +265,9 @@ router.post('/checkin', async (req: AuthRequest, res: Response, next: NextFuncti
       success: true,
       data: {
         creditsEarned: rewardAmount,
+        tokensEarned: 5,
         newBalance: balanceResult.rows[0].credits_balance,
+        newTokenBalance: balanceResult.rows[0].tokens,
         streak: streakResult.rows[0],
         streakSaverUsed,
       },
@@ -340,19 +344,21 @@ router.post('/rewarded-ad-complete', async (req: AuthRequest, res: Response, nex
       [userId, req.deviceId, rewardAmount, req.ip, JSON.stringify({ adUnitId, rewardToken, timestamp })]
     );
 
-    // Update balance
+    // Update balance (credits + 1 token per ad)
+    const tokenReward = 1;
     await pool.query(
       `UPDATE balances 
        SET credits_balance = credits_balance + $1, 
            lifetime_earned = lifetime_earned + $1,
+           tokens = COALESCE(tokens, 100) + $2,
            updated_at = NOW()
-       WHERE user_id = $2`,
-      [rewardAmount, userId]
+       WHERE user_id = $3`,
+      [rewardAmount, tokenReward, userId]
     );
 
-    // Get updated balance
+    // Get updated balance including tokens
     const balanceResult = await pool.query(
-      'SELECT credits_balance FROM balances WHERE user_id = $1',
+      'SELECT credits_balance, COALESCE(tokens, 100) as tokens FROM balances WHERE user_id = $1',
       [userId]
     );
 
@@ -360,7 +366,9 @@ router.post('/rewarded-ad-complete', async (req: AuthRequest, res: Response, nex
       success: true,
       data: {
         creditsEarned: rewardAmount,
+        tokensEarned: tokenReward,
         newBalance: balanceResult.rows[0].credits_balance,
+        newTokenBalance: balanceResult.rows[0].tokens,
         adsWatchedToday: parseInt(todayAds.rows[0].count) + 1,
         xpBoostApplied,
         baseReward: parseInt(process.env.AD_REWARD || '10'),
@@ -412,19 +420,21 @@ router.post('/learn-complete', async (req: AuthRequest, res: Response, next: Nex
       [userId, req.deviceId, rewardAmount, req.ip, JSON.stringify({ moduleId, quizScore })]
     );
 
-    // Update balance
+    // Update balance (credits + 10 tokens for learning)
+    const tokenReward = 10;
     await pool.query(
       `UPDATE balances 
        SET credits_balance = credits_balance + $1, 
            lifetime_earned = lifetime_earned + $1,
+           tokens = COALESCE(tokens, 100) + $2,
            updated_at = NOW()
-       WHERE user_id = $2`,
-      [rewardAmount, userId]
+       WHERE user_id = $3`,
+      [rewardAmount, tokenReward, userId]
     );
 
-    // Get updated balance
+    // Get updated balance including tokens
     const balanceResult = await pool.query(
-      'SELECT credits_balance FROM balances WHERE user_id = $1',
+      'SELECT credits_balance, COALESCE(tokens, 100) as tokens FROM balances WHERE user_id = $1',
       [userId]
     );
 
@@ -432,7 +442,9 @@ router.post('/learn-complete', async (req: AuthRequest, res: Response, next: Nex
       success: true,
       data: {
         creditsEarned: rewardAmount,
+        tokensEarned: tokenReward,
         newBalance: balanceResult.rows[0].credits_balance,
+        newTokenBalance: balanceResult.rows[0].tokens,
         moduleId,
         quizScore,
       },

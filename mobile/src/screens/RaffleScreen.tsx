@@ -421,6 +421,24 @@ const RaffleScreen = () => {
           <Text style={styles.creditsSubtext}>Use for Jackpot & Token Store (no cash value)</Text>
         </View>
 
+        {/* How to Earn Tokens Section */}
+        <View style={[styles.infoBanner, { backgroundColor: colors.warning + '20', borderColor: colors.warning }]}>
+          <Text style={styles.infoIcon}>💡</Text>
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.infoText, { fontWeight: '700', marginBottom: 8 }]}>
+              How to Earn Tokens:
+            </Text>
+            <View style={{ gap: 4 }}>
+              <Text style={styles.infoText}>✅ Daily Check-in: +5 tokens</Text>
+              <Text style={styles.infoText}>📺 Watch Ads: +1 token each</Text>
+              <Text style={styles.infoText}>📚 Learn Modules: +10 tokens each</Text>
+              <Text style={[styles.infoText, { fontStyle: 'italic', marginTop: 4, opacity: 0.8 }]}>
+                Tokens are for fun only - no cash value!
+              </Text>
+            </View>
+          </View>
+        </View>
+
         {/* 🎰 JACKPOT SECTION */}
         <Text style={styles.sectionTitle}>🎰 Token Jackpot</Text>
         <View style={[styles.raffleCard, { borderColor: colors.warning, borderWidth: 2 }]}>
