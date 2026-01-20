@@ -98,13 +98,46 @@ const EarnScreen = () => {
     setLoading(true);
     
     try {
-      // Check if ad is ready
-      if (!adMobService.isAdReady()) {
-        // Try to load ad first
-        adMobService.loadAd();
-        Alert.alert('Loading Ad', 'Please wait a moment and try again.');
+      // Check if SDK is loaded
+      if (!adMobService.isSdkLoaded()) {
+        const lastError = adMobService.getLastError();
+        Alert.alert(
+          'Ads Not Available', 
+          `The ad service could not be initialized. ${lastError ? `Error: ${lastError}` : 'Please restart the app and try again.'}`
+        );
         setLoading(false);
         return;
+      }
+
+      // Check if ad is ready
+      if (!adMobService.isAdReady()) {
+        // Start loading the ad
+        adMobService.loadAd();
+        
+        // Wait for ad to be ready (up to 15 seconds)
+        let attempts = 0;
+        const maxAttempts = 30; // 30 x 500ms = 15 seconds
+        
+        while (!adMobService.isAdReady() && attempts < maxAttempts) {
+          await new Promise(resolve => setTimeout(resolve, 500));
+          attempts++;
+        }
+        
+        // Check if ad loaded
+        if (!adMobService.isAdReady()) {
+          const lastError = adMobService.getLastError();
+          let message = 'Could not load ad. Please try again.';
+          if (lastError) {
+            if (lastError.includes('No fill') || lastError.includes('no ad')) {
+              message = 'No ads available right now. Please try again in a few minutes.';
+            } else if (lastError.includes('network')) {
+              message = 'Please check your internet connection and try again.';
+            }
+          }
+          Alert.alert('Ad Not Available', message);
+          setLoading(false);
+          return;
+        }
       }
 
       // Show the ad

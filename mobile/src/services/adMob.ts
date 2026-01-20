@@ -2,19 +2,20 @@
 // Publisher ID: pub-8186263051960596
 
 import { Platform } from 'react-native';
+import mobileAds, {
+  RewardedAd,
+  RewardedAdEventType,
+  AdEventType,
+} from 'react-native-google-mobile-ads';
+import trackingService from '../utils/trackingTransparency';
 
 // Test Ad Unit IDs (use these during development)
-// Replace with your real Ad Unit IDs from AdMob console for production
 const TEST_AD_UNITS = {
   ios: {
     rewarded: 'ca-app-pub-3940256099942544/1712485313', // Google test ad
-    interstitial: 'ca-app-pub-3940256099942544/4411468910',
-    banner: 'ca-app-pub-3940256099942544/2934735716',
   },
   android: {
     rewarded: 'ca-app-pub-3940256099942544/5224354917', // Google test ad
-    interstitial: 'ca-app-pub-3940256099942544/1033173712',
-    banner: 'ca-app-pub-3940256099942544/6300978111',
   },
 };
 
@@ -23,164 +24,273 @@ const TEST_AD_UNITS = {
 const PRODUCTION_AD_UNITS = {
   ios: {
     rewarded: 'ca-app-pub-8186263051960596/2549908533',
-    interstitial: 'ca-app-pub-8186263051960596/2549908533', // Use rewarded for now
-    banner: 'ca-app-pub-8186263051960596/2549908533',
   },
   android: {
     rewarded: 'ca-app-pub-8186263051960596/2549908533',
-    interstitial: 'ca-app-pub-8186263051960596/2549908533',
-    banner: 'ca-app-pub-8186263051960596/2549908533',
   },
 };
 
-// Use test ads in development, production ads when published
-const isDev = __DEV__;
-const adUnits = isDev ? TEST_AD_UNITS : PRODUCTION_AD_UNITS;
+// FORCE TEST ADS for debugging - set to false for production release
+const FORCE_TEST_ADS = false;
 
-import trackingService from '../utils/trackingTransparency';
+// Use test ads when forcing OR in dev mode
+const useTestAds = FORCE_TEST_ADS || __DEV__;
+
+// Get the correct ad unit ID
+const getRewardedAdUnitId = (): string => {
+  if (useTestAds) {
+    return Platform.OS === 'ios' 
+      ? TEST_AD_UNITS.ios.rewarded 
+      : TEST_AD_UNITS.android.rewarded;
+  }
+  return Platform.OS === 'ios'
+    ? PRODUCTION_AD_UNITS.ios.rewarded
+    : PRODUCTION_AD_UNITS.android.rewarded;
+};
 
 class AdMobService {
   private isInitialized = false;
-  private rewardedAd: any = null;
+  private rewardedAd: RewardedAd | null = null;
   private isAdLoading = false;
-  private isAdReady = false;
+  private _isAdReady = false;
   private usePersonalizedAds = false;
+  private loadAttempts = 0;
+  private maxLoadAttempts = 3;
+  private lastError: string | null = null;
+  private sdkLoaded = false;
+  
+  // Track pending reward to show after ad closes
+  private pendingReward: { type: string; amount: number } | null = null;
+  private rewardCallback: ((reward: { type: string; amount: number }) => void) | null = null;
+  private closedCallback: (() => void) | null = null;
 
-  async initialize() {
-    if (this.isInitialized) return;
+  async initialize(): Promise<void> {
+    if (this.isInitialized) {
+      console.log('📺 AdMob already initialized');
+      return;
+    }
+
+    console.log('🚀 Starting AdMob initialization...');
+    console.log(`📺 Using ${useTestAds ? 'TEST' : 'PRODUCTION'} ads`);
+    console.log(`📺 Ad Unit ID: ${getRewardedAdUnitId()}`);
 
     try {
       // Initialize ATT first (iOS 14.5+ requirement)
-      await trackingService.initialize();
-      
-      // Request tracking permission before loading ads
-      // This MUST happen before AdMob initialization for proper ATT compliance
       if (Platform.OS === 'ios') {
-        const status = await trackingService.requestPermission();
-        this.usePersonalizedAds = trackingService.canShowPersonalizedAds();
-        console.log(`📱 ATT Status: ${status}, Personalized Ads: ${this.usePersonalizedAds}`);
+        console.log('📱 Initializing tracking transparency...');
+        try {
+          await trackingService.initialize();
+          const status = await trackingService.requestPermission();
+          this.usePersonalizedAds = trackingService.canShowPersonalizedAds();
+          console.log(`📱 ATT Status: ${status}, Personalized Ads: ${this.usePersonalizedAds}`);
+        } catch (attError) {
+          console.log('⚠️ ATT request failed, using non-personalized ads:', attError);
+          this.usePersonalizedAds = false;
+        }
       }
 
-      // Note: react-native-google-mobile-ads requires a development build
-      // It won't work in Expo Go - you need to run: npx expo prebuild && npx expo run:ios
-      const { default: mobileAds } = await import('react-native-google-mobile-ads');
-      
+      // Initialize AdMob SDK
+      console.log('📺 Initializing AdMob SDK...');
       await mobileAds().initialize();
-      console.log('✅ AdMob initialized');
+      console.log('✅ AdMob SDK initialized successfully!');
+      
+      this.sdkLoaded = true;
       this.isInitialized = true;
       
       // Preload a rewarded ad
+      console.log('📺 Preloading first rewarded ad...');
       this.loadRewardedAd();
+      
     } catch (error) {
-      console.log('⚠️ AdMob not available (requires development build):', error);
-      // In Expo Go, we'll simulate ads
+      console.log('❌ AdMob initialization FAILED:', error);
+      this.lastError = `SDK init failed: ${String(error)}`;
       this.isInitialized = true;
+      this.sdkLoaded = false;
     }
   }
 
-  async loadRewardedAd() {
-    if (this.isAdLoading || this.isAdReady) return;
+  loadRewardedAd(): void {
+    if (!this.sdkLoaded) {
+      console.log('❌ Cannot load ad - SDK not loaded');
+      this.lastError = 'AdMob SDK not initialized';
+      return;
+    }
+
+    if (this.isAdLoading) {
+      console.log('⏳ Ad already loading, skipping...');
+      return;
+    }
+    
+    if (this._isAdReady) {
+      console.log('✅ Ad already ready');
+      return;
+    }
     
     this.isAdLoading = true;
+    this.loadAttempts++;
 
-    try {
-      const { RewardedAd, RewardedAdEventType, TestIds } = await import('react-native-google-mobile-ads');
-      
-      const adUnitId = Platform.select({
-        ios: adUnits.ios.rewarded,
-        android: adUnits.android.rewarded,
-      }) || TestIds.REWARDED;
+    const adUnitId = getRewardedAdUnitId();
+    console.log(`📺 Loading rewarded ad: ${adUnitId} (attempt ${this.loadAttempts}/${this.maxLoadAttempts})`);
 
-      this.rewardedAd = RewardedAd.createForAdRequest(adUnitId, {
-        // Respect user's ATT choice - show non-personalized if tracking denied
-        requestNonPersonalizedAdsOnly: !this.usePersonalizedAds,
-      });
+    // Clean up previous ad if exists
+    if (this.rewardedAd) {
+      try {
+        this.rewardedAd.removeAllListeners();
+      } catch (e) {
+        // Ignore cleanup errors
+      }
+    }
 
-      this.rewardedAd.addAdEventListener(RewardedAdEventType.LOADED, () => {
-        console.log('✅ Rewarded ad loaded');
-        this.isAdReady = true;
-        this.isAdLoading = false;
-      });
+    // Create the rewarded ad
+    this.rewardedAd = RewardedAd.createForAdRequest(adUnitId, {
+      requestNonPersonalizedAdsOnly: !this.usePersonalizedAds,
+    });
 
-      this.rewardedAd.addAdEventListener(RewardedAdEventType.EARNED_REWARD, (reward: any) => {
-        console.log('🎉 User earned reward:', reward);
-      });
-
-      this.rewardedAd.load();
-    } catch (error) {
-      console.log('⚠️ Could not load rewarded ad:', error);
+    // Handle ad loaded
+    this.rewardedAd.addAdEventListener(RewardedAdEventType.LOADED, () => {
+      console.log('✅ Rewarded ad loaded successfully!');
+      this._isAdReady = true;
       this.isAdLoading = false;
-    }
-  }
+      this.loadAttempts = 0;
+      this.lastError = null;
+    });
 
-  async showRewardedAd(): Promise<{ success: boolean; reward?: number }> {
-    // IMPORTANT: Only give rewards if a REAL ad was shown
-    // Never simulate in production builds
-    if (!this.rewardedAd) {
-      console.log('❌ No rewarded ad object - ads not available');
-      return { success: false };
-    }
+    // Handle earned reward - store it, don't trigger callback yet
+    this.rewardedAd.addAdEventListener(RewardedAdEventType.EARNED_REWARD, (reward) => {
+      console.log('🎉 User earned reward (storing for after ad closes):', reward);
+      this.pendingReward = { type: 'credits', amount: 10 };
+    });
 
-    if (!this.isAdReady) {
-      console.log('⏳ Ad not ready, loading...');
-      await this.loadRewardedAd();
-      return { success: false };
-    }
+    // Handle ad errors
+    this.rewardedAd.addAdEventListener(AdEventType.ERROR, (error) => {
+      console.log('❌ Ad failed to load:', error);
+      this.lastError = error?.message || String(error);
+      this.isAdLoading = false;
+      this._isAdReady = false;
+      
+      // Retry loading after a delay
+      if (this.loadAttempts < this.maxLoadAttempts) {
+        console.log(`🔄 Retrying in 5 seconds... (attempt ${this.loadAttempts + 1})`);
+        setTimeout(() => this.loadRewardedAd(), 5000);
+      } else {
+        console.log('❌ Max attempts reached. Error:', this.lastError);
+      }
+    });
 
-    try {
-      await this.rewardedAd.show();
-      this.isAdReady = false;
+    // Handle ad closed - NOW trigger the reward callback
+    this.rewardedAd.addAdEventListener(AdEventType.CLOSED, () => {
+      console.log('📺 Ad closed');
+      this._isAdReady = false;
+      
+      // If user earned a reward, trigger the callback now
+      if (this.pendingReward && this.rewardCallback) {
+        console.log('💰 Triggering reward callback after ad closed');
+        this.rewardCallback(this.pendingReward);
+        this.pendingReward = null;
+      }
+      
+      // Trigger closed callback
+      if (this.closedCallback) {
+        this.closedCallback();
+      }
+      
+      // Clear callbacks
+      this.rewardCallback = null;
+      this.closedCallback = null;
       
       // Preload next ad
-      setTimeout(() => this.loadRewardedAd(), 1000);
-      
+      setTimeout(() => {
+        this.loadAttempts = 0;
+        this.loadRewardedAd();
+      }, 1000);
+    });
+
+    // Load the ad
+    this.rewardedAd.load();
+  }
+
+  async showRewardedAd(): Promise<{ success: boolean; reward?: number; error?: string }> {
+    if (!this.sdkLoaded) {
+      return { success: false, error: 'AdMob SDK not initialized' };
+    }
+
+    if (!this.rewardedAd) {
+      return { success: false, error: 'No ad object created' };
+    }
+
+    if (!this._isAdReady) {
+      console.log('⏳ Ad not ready, triggering load...');
+      this.loadAttempts = 0;
+      this.loadRewardedAd();
+      return { success: false, error: 'Ad is loading. Please wait and try again.' };
+    }
+
+    try {
+      console.log('📺 Showing rewarded ad...');
+      await this.rewardedAd.show();
+      this._isAdReady = false;
       return { success: true, reward: 10 };
     } catch (error) {
       console.log('❌ Failed to show ad:', error);
-      this.isAdReady = false;
+      this._isAdReady = false;
+      this.loadAttempts = 0;
       this.loadRewardedAd();
-      return { success: false };
+      return { success: false, error: String(error) };
     }
   }
 
   isRewardedAdReady(): boolean {
-    // Only return true if we have a real ad object AND it's ready
-    if (!this.rewardedAd) return false;
-    return this.isAdReady;
+    return this._isAdReady && this.rewardedAd !== null;
   }
 
-  // Alias for compatibility with EarnScreen
-  isAdReadyFn(): boolean {
+  getLastError(): string | null {
+    return this.lastError;
+  }
+
+  getLoadingStatus() {
+    return {
+      isLoading: this.isAdLoading,
+      attempts: this.loadAttempts,
+      maxAttempts: this.maxLoadAttempts,
+      sdkLoaded: this.sdkLoaded,
+    };
+  }
+
+  isSdkLoaded(): boolean {
+    return this.sdkLoaded;
+  }
+
+  // Aliases for EarnScreen compatibility
+  isAdReady(): boolean {
     return this.isRewardedAdReady();
   }
 
-  // Load ad alias
-  loadAd() {
-    return this.loadRewardedAd();
+  loadAd(): void {
+    this.loadRewardedAd();
   }
 
-  // Show ad with callbacks (for EarnScreen compatibility)
   async showAd(callbacks: {
     onEarnedReward?: (reward: { type: string; amount: number }) => void;
     onAdClosed?: () => void;
     onAdFailedToLoad?: (error: any) => void;
   }): Promise<void> {
+    // Store callbacks to be triggered when ad closes
+    this.rewardCallback = callbacks.onEarnedReward || null;
+    this.closedCallback = callbacks.onAdClosed || null;
+    this.pendingReward = null; // Reset pending reward
+    
     const result = await this.showRewardedAd();
     
-    if (result.success && result.reward) {
-      callbacks.onEarnedReward?.({ type: 'credits', amount: result.reward });
-    } else if (!result.success) {
-      callbacks.onAdFailedToLoad?.('Ad not available');
+    // Only trigger failure callback immediately - success is handled on ad close
+    if (!result.success) {
+      callbacks.onAdFailedToLoad?.(result.error);
+      // Clear callbacks on failure
+      this.rewardCallback = null;
+      this.closedCallback = null;
     }
-    
-    callbacks.onAdClosed?.();
   }
 }
 
 // Export singleton instance
 const adMobService = new AdMobService();
-
-// Add isAdReady as a method reference for compatibility
-(adMobService as any).isAdReady = () => adMobService.isRewardedAdReady();
-
 export default adMobService;
