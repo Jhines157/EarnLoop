@@ -15,9 +15,9 @@ import giveawayRoutes from './routes/giveaway';
 let adminRoutes: any;
 try {
   adminRoutes = require('./routes/admin').default;
-  console.log('✅ Admin routes imported successfully');
+  console.log('Admin routes imported successfully');
 } catch (err: any) {
-  console.error('❌ Failed to import admin routes:', err.message);
+  console.error('Failed to import admin routes:', err.message);
 }
 
 dotenv.config();
@@ -43,17 +43,17 @@ app.get('/health', (req, res) => {
 
 // Admin test endpoint (for debugging)
 app.get('/admin-test', (req, res) => {
-  res.json({ working: true, adminRoutesLoaded: !!adminRoutes, timestamp: new Date().toISOString() });
+  res.json({ working: true, adminRoutesLoaded: !!adminRoutes, time: new Date().toISOString() });
 });
 
 // AdMob SSV Callback - MUST be before authenticated routes
 // This is called by Google's servers, not the app
 app.get('/earn/admob-ssv', (req, res) => {
-  console.log('📺 AdMob SSV callback received at server level:', req.query);
+  console.log('AdMob SSV callback received at server level:', req.query);
   
   // For verification ping from AdMob console (no params), return 200
   if (!req.query.transaction_id && !req.query.user_id) {
-    console.log('✅ AdMob SSV verification ping - OK');
+    console.log('AdMob SSV verification ping - OK');
     return res.status(200).send('OK');
   }
   
@@ -76,11 +76,11 @@ if (adminRoutes) {
 app.use(errorHandler);
 
 app.listen(PORT, () => {
-  console.log(`🚀 EarnLoop API running on port ${PORT}`);
-  console.log(`📊 Environment: ${process.env.NODE_ENV || 'development'}`);
-  console.log(`📺 AdMob SSV endpoint ready at /earn/admob-ssv`);
-  console.log(`� Admin routes loaded at /admin`);
-  console.log(`�🕐 Server ready at: ${new Date().toISOString()}`);
+  console.log('EarnLoop API running on port ' + PORT);
+  console.log('Environment: ' + (process.env.NODE_ENV || 'development'));
+  console.log('AdMob SSV endpoint ready at /earn/admob-ssv');
+  console.log('Admin routes loaded at /admin');
+  console.log('Server ready at: ' + new Date().toISOString());
 });
 
 export default app;
