@@ -41,6 +41,11 @@ app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
+// Test endpoint for admin
+app.get('/admin-test', (req, res) => {
+  res.json({ working: true, adminRoutesLoaded: !!adminRoutes });
+});
+
 // AdMob SSV Callback - MUST be before authenticated routes
 // This is called by Google's servers, not the app
 app.get('/earn/admob-ssv', (req, res) => {
