@@ -11,7 +11,14 @@ import earnRoutes from './routes/earn';
 import storeRoutes from './routes/store';
 import userRoutes from './routes/user';
 import giveawayRoutes from './routes/giveaway';
-import adminRoutes from './routes/admin';
+
+let adminRoutes: any;
+try {
+  adminRoutes = require('./routes/admin').default;
+  console.log('✅ Admin routes imported successfully');
+} catch (err: any) {
+  console.error('❌ Failed to import admin routes:', err.message);
+}
 
 dotenv.config();
 
@@ -56,7 +63,9 @@ app.use('/earn', earnRoutes);
 app.use('/store', storeRoutes);
 app.use('/me', userRoutes);
 app.use('/giveaway', giveawayRoutes);
-app.use('/admin', adminRoutes);
+if (adminRoutes) {
+  app.use('/admin', adminRoutes);
+}
 
 // Error handling
 app.use(errorHandler);
