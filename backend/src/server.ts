@@ -65,7 +65,7 @@ app.listen(PORT, () => {
   console.log(`🚀 EarnLoop API running on port ${PORT}`);
   console.log(`📊 Environment: ${process.env.NODE_ENV || 'development'}`);
   console.log(`📺 AdMob SSV endpoint ready at /earn/admob-ssv`);
-  console.log(`🕐 Server started at: ${new Date().toISOString()}`);
+  console.log(`🕐 Server ready at: ${new Date().toISOString()}`);
 });
 
 export default app;
