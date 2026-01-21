@@ -22,6 +22,7 @@ export type AuthStackParamList = {
   Onboarding: undefined;
   Login: undefined;
   Signup: undefined;
+  ForgotPassword: undefined;
 };
 
 // Combined navigation types

@@ -37,6 +37,7 @@ import TermsScreen from '../screens/TermsScreen';
 import PrivacyScreen from '../screens/PrivacyScreen';
 import NotificationsScreen from '../screens/NotificationsScreen';
 import AppearanceScreen from '../screens/AppearanceScreen';
+import ForgotPasswordScreen from '../screens/ForgotPasswordScreen';
 
 // Styles defined early to avoid reference errors
 const styles = StyleSheet.create({
@@ -312,6 +313,11 @@ const AuthStack = () => {
         name="Signup" 
         component={SignupScreen}
         options={{ title: 'Create Account' }}
+      />
+      <Stack.Screen 
+        name="ForgotPassword" 
+        component={ForgotPasswordScreen}
+        options={{ headerShown: false }}
       />
       <Stack.Screen 
         name="Terms" 

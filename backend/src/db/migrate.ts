@@ -223,6 +223,32 @@ const migrate = async () => {
     `);
     console.log('✅ redemptions gift card columns added');
 
+    // Admin logs table (for tracking admin actions like gift card sends)
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS admin_logs (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        action VARCHAR(100) NOT NULL,
+        admin_note TEXT,
+        user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+        metadata JSONB,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+      );
+    `);
+    console.log('✅ admin_logs table created');
+
+    // Password resets table (for user self-service password reset)
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS password_resets (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id UUID UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+        code_hash VARCHAR(255) NOT NULL,
+        expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+        attempts INTEGER DEFAULT 0,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+      );
+    `);
+    console.log('✅ password_resets table created');
+
     console.log('🎉 All migrations completed successfully!');
   } catch (error) {
     console.error('❌ Migration failed:', error);

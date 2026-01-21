@@ -11,6 +11,7 @@ import earnRoutes from './routes/earn';
 import storeRoutes from './routes/store';
 import userRoutes from './routes/user';
 import giveawayRoutes from './routes/giveaway';
+import adminRoutes from './routes/admin';
 
 dotenv.config();
 
@@ -55,6 +56,7 @@ app.use('/earn', earnRoutes);
 app.use('/store', storeRoutes);
 app.use('/me', userRoutes);
 app.use('/giveaway', giveawayRoutes);
+app.use('/admin', adminRoutes);
 
 // Error handling
 app.use(errorHandler);

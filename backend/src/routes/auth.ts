@@ -1,6 +1,8 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
+import crypto from 'crypto';
+import nodemailer from 'nodemailer';
 import { v4 as uuidv4 } from 'uuid';
 import pool from '../db';
 import { authRateLimiter } from '../middleware/rateLimiter';
@@ -175,6 +177,185 @@ router.delete('/delete-account', authenticate, async (req: AuthRequest, res: Res
       data: {
         message: 'Account deleted successfully',
       },
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// ============================================
+// PASSWORD RESET (User Self-Service)
+// ============================================
+
+// Create email transporter
+const createTransporter = () => {
+  return nodemailer.createTransport({
+    host: process.env.SMTP_HOST,
+    port: parseInt(process.env.SMTP_PORT || '587'),
+    secure: process.env.SMTP_SECURE === 'true',
+    auth: {
+      user: process.env.SMTP_USER,
+      pass: process.env.SMTP_PASS,
+    },
+  });
+};
+
+// Request password reset - sends email with 6-digit code
+router.post('/forgot-password', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { email } = req.body;
+
+    if (!email) {
+      return next(createError('Email is required', 400, 'MISSING_FIELDS'));
+    }
+
+    // Find user
+    const userResult = await pool.query(
+      'SELECT id, email FROM users WHERE email = $1',
+      [email.toLowerCase()]
+    );
+
+    // Always return success to prevent email enumeration
+    if (userResult.rows.length === 0) {
+      return res.json({
+        success: true,
+        data: { message: 'If an account exists, a reset code has been sent.' },
+      });
+    }
+
+    const user = userResult.rows[0];
+
+    // Generate 6-digit code
+    const resetCode = Math.floor(100000 + Math.random() * 900000).toString();
+    const resetCodeHash = crypto.createHash('sha256').update(resetCode).digest('hex');
+    const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes
+
+    // Store reset code in database
+    await pool.query(`
+      INSERT INTO password_resets (user_id, code_hash, expires_at)
+      VALUES ($1, $2, $3)
+      ON CONFLICT (user_id) 
+      DO UPDATE SET code_hash = $2, expires_at = $3, attempts = 0, created_at = NOW()
+    `, [user.id, resetCodeHash, expiresAt]);
+
+    // Send email if SMTP is configured
+    if (process.env.SMTP_HOST) {
+      const transporter = createTransporter();
+      
+      await transporter.sendMail({
+        from: process.env.SMTP_FROM || 'EarnLoop <noreply@earnloop.app>',
+        to: user.email,
+        subject: 'Reset Your EarnLoop Password',
+        html: `
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+            <div style="background: linear-gradient(135deg, #4F46E5 0%, #7C3AED 100%); padding: 30px; border-radius: 12px; text-align: center;">
+              <h1 style="color: white; margin: 0;">🔐 Password Reset</h1>
+            </div>
+            
+            <div style="padding: 30px; background: #f9fafb; border-radius: 12px; margin-top: 20px;">
+              <p style="color: #4b5563; font-size: 16px;">
+                You requested to reset your password. Use this code in the app:
+              </p>
+              
+              <div style="background: white; border: 2px solid #4F46E5; border-radius: 8px; padding: 20px; margin: 20px 0; text-align: center;">
+                <p style="font-size: 36px; font-weight: bold; color: #4F46E5; letter-spacing: 8px; margin: 0;">
+                  ${resetCode}
+                </p>
+              </div>
+              
+              <p style="color: #6b7280; font-size: 14px;">
+                This code expires in 15 minutes. If you didn't request this, you can ignore this email.
+              </p>
+            </div>
+            
+            <div style="text-align: center; padding: 20px; color: #9ca3af;">
+              <p style="margin: 0;">- The EarnLoop Team</p>
+            </div>
+          </div>
+        `,
+      });
+    }
+
+    res.json({
+      success: true,
+      data: { 
+        message: 'If an account exists, a reset code has been sent.',
+        // In dev mode, return the code for testing (remove in production!)
+        ...(process.env.NODE_ENV === 'development' && { devCode: resetCode }),
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Verify reset code and set new password
+router.post('/reset-password', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { email, code, newPassword } = req.body;
+
+    if (!email || !code || !newPassword) {
+      return next(createError('Email, code, and new password are required', 400, 'MISSING_FIELDS'));
+    }
+
+    if (newPassword.length < 8) {
+      return next(createError('Password must be at least 8 characters', 400, 'WEAK_PASSWORD'));
+    }
+
+    // Find user
+    const userResult = await pool.query(
+      'SELECT id FROM users WHERE email = $1',
+      [email.toLowerCase()]
+    );
+
+    if (userResult.rows.length === 0) {
+      return next(createError('Invalid reset code', 400, 'INVALID_CODE'));
+    }
+
+    const userId = userResult.rows[0].id;
+
+    // Find valid reset code
+    const resetResult = await pool.query(`
+      SELECT id, code_hash, expires_at, attempts 
+      FROM password_resets 
+      WHERE user_id = $1 AND expires_at > NOW()
+    `, [userId]);
+
+    if (resetResult.rows.length === 0) {
+      return next(createError('Reset code expired. Please request a new one.', 400, 'CODE_EXPIRED'));
+    }
+
+    const reset = resetResult.rows[0];
+
+    // Check attempts (prevent brute force)
+    if (reset.attempts >= 5) {
+      await pool.query('DELETE FROM password_resets WHERE id = $1', [reset.id]);
+      return next(createError('Too many attempts. Please request a new code.', 400, 'TOO_MANY_ATTEMPTS'));
+    }
+
+    // Verify code
+    const codeHash = crypto.createHash('sha256').update(code).digest('hex');
+    if (codeHash !== reset.code_hash) {
+      await pool.query(
+        'UPDATE password_resets SET attempts = attempts + 1 WHERE id = $1',
+        [reset.id]
+      );
+      return next(createError('Invalid reset code', 400, 'INVALID_CODE'));
+    }
+
+    // Hash new password and update
+    const passwordHash = await bcrypt.hash(newPassword, 12);
+    await pool.query(
+      'UPDATE users SET password_hash = $1, updated_at = NOW() WHERE id = $2',
+      [passwordHash, userId]
+    );
+
+    // Delete used reset code
+    await pool.query('DELETE FROM password_resets WHERE user_id = $1', [userId]);
+
+    res.json({
+      success: true,
+      data: { message: 'Password reset successfully. You can now log in.' },
     });
   } catch (error) {
     next(error);
