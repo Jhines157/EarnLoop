@@ -2,7 +2,7 @@
   "expo": {
     "name": "EarnLoop",
     "slug": "earnloop",
-    "version": "1.0.3",
+    "version": "1.0.4",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
@@ -17,7 +17,7 @@
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.jhines157.earnloop",
-      "buildNumber": "2",
+      "buildNumber": "3",
       "infoPlist": {
         "NSUserTrackingUsageDescription": "EarnLoop uses this permission to show you relevant ads and improve your experience. You can still use the app without allowing tracking.",
         "SKAdNetworkItems": [
@@ -87,7 +87,7 @@
     },
     "android": {
       "package": "com.jhines157.earnloop",
-      "versionCode": 1,
+      "versionCode": 2,
       "permissions": [
         "com.google.android.gms.permission.AD_ID"
       ]

@@ -206,10 +206,22 @@ router.post('/users/:id/reset-password', async (req: Request, res: Response, nex
 
 // Create email transporter
 const createTransporter = () => {
+  // Use Gmail service directly for better compatibility
+  if (process.env.SMTP_HOST === 'smtp.gmail.com') {
+    return nodemailer.createTransport({
+      service: 'gmail',
+      auth: {
+        user: process.env.SMTP_USER,
+        pass: process.env.SMTP_PASS,
+      },
+    });
+  }
+  
+  // Fallback to generic SMTP config
   return nodemailer.createTransport({
     host: process.env.SMTP_HOST,
     port: parseInt(process.env.SMTP_PORT || '587'),
-    secure: process.env.SMTP_SECURE === 'true',
+    secure: parseInt(process.env.SMTP_PORT || '587') === 465,
     auth: {
       user: process.env.SMTP_USER,
       pass: process.env.SMTP_PASS,
