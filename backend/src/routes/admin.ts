@@ -5,8 +5,14 @@ import { Resend } from 'resend';
 import pool from '../db';
 import { createError } from '../middleware/errorHandler';
 
-// Initialize Resend
-const resend = new Resend(process.env.RESEND_API_KEY);
+// Lazy initialize Resend
+let resend: Resend | null = null;
+const getResend = () => {
+  if (!resend && process.env.RESEND_API_KEY) {
+    resend = new Resend(process.env.RESEND_API_KEY);
+  }
+  return resend;
+};
 
 const router = Router();
 
@@ -209,7 +215,12 @@ router.post('/users/:id/reset-password', async (req: Request, res: Response, nex
 
 // Send email using Resend
 const sendEmail = async (to: string, subject: string, html: string) => {
-  const { data, error } = await resend.emails.send({
+  const resendClient = getResend();
+  if (!resendClient) {
+    throw new Error('RESEND_API_KEY not configured');
+  }
+  
+  const { data, error } = await resendClient.emails.send({
     from: 'EarnLoop <support@earnloop.app>',
     to: [to],
     subject,
