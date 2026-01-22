@@ -5,6 +5,8 @@ import dotenv from 'dotenv';
 
 import { errorHandler } from './middleware/errorHandler';
 import { rateLimiter } from './middleware/rateLimiter';
+import { ipBlacklistMiddleware } from './middleware/ipBlacklist';
+import { auditLogger } from './middleware/auditLogger';
 
 import authRoutes from './routes/auth';
 import earnRoutes from './routes/earn';
@@ -33,8 +35,14 @@ app.use(helmet());
 app.use(cors());
 app.use(express.json());
 
+// IP Blacklist check (before rate limiting)
+app.use(ipBlacklistMiddleware);
+
 // Rate limiting
 app.use(rateLimiter);
+
+// Audit logging (after body parsing)
+app.use(auditLogger);
 
 // Health check
 app.get('/health', (req, res) => {

@@ -249,6 +249,46 @@ const migrate = async () => {
     `);
     console.log('✅ password_resets table created');
 
+    // IP Blacklist table (for blocking malicious IPs)
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS ip_blacklist (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        ip_address VARCHAR(45) UNIQUE NOT NULL,
+        reason TEXT,
+        user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+        expires_at TIMESTAMP WITH TIME ZONE,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+      );
+    `);
+    console.log('✅ ip_blacklist table created');
+
+    // Audit logs table (for request audit trail)
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS audit_logs (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        method VARCHAR(10) NOT NULL,
+        path VARCHAR(255) NOT NULL,
+        ip_address VARCHAR(45),
+        user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+        user_agent TEXT,
+        request_body JSONB,
+        response_status VARCHAR(20),
+        status_code INTEGER,
+        duration_ms INTEGER,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+      );
+    `);
+    console.log('✅ audit_logs table created');
+
+    // Index for audit log queries
+    await pool.query(`
+      CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON audit_logs (created_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_audit_logs_ip ON audit_logs (ip_address);
+      CREATE INDEX IF NOT EXISTS idx_audit_logs_user ON audit_logs (user_id);
+    `);
+    console.log('✅ audit_logs indexes created');
+
     console.log('🎉 All migrations completed successfully!');
   } catch (error) {
     console.error('❌ Migration failed:', error);

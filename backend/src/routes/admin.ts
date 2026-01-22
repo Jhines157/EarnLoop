@@ -16,19 +16,68 @@ const getResend = () => {
 
 const router = Router();
 
-// Simple admin API key authentication
+import rateLimit from 'express-rate-limit';
+
+// Strict rate limiter for admin endpoints
+const adminRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100, // 100 requests per 15 minutes
+  message: {
+    success: false,
+    error: {
+      message: 'Too many admin requests. Try again later.',
+      code: 'ADMIN_RATE_LIMITED'
+    }
+  }
+});
+
+// Track failed admin auth attempts
+const failedAttempts = new Map<string, { count: number; lastAttempt: number }>();
+const MAX_FAILED_ATTEMPTS = 5;
+const LOCKOUT_DURATION = 30 * 60 * 1000; // 30 minutes
+
+// Strict admin API key authentication (header only, no query params)
 const adminAuth = (req: Request, res: Response, next: NextFunction) => {
-  const apiKey = req.headers['x-admin-key'] || req.query.adminKey;
+  const clientIP = req.headers['x-forwarded-for']?.toString().split(',')[0] || req.ip || '';
+  
+  // Check if IP is locked out
+  const attempts = failedAttempts.get(clientIP);
+  if (attempts && attempts.count >= MAX_FAILED_ATTEMPTS) {
+    const timeSinceLockout = Date.now() - attempts.lastAttempt;
+    if (timeSinceLockout < LOCKOUT_DURATION) {
+      console.log(`Admin auth blocked - IP locked out: ${clientIP}`);
+      return res.status(429).json({ 
+        success: false, 
+        error: { message: 'Too many failed attempts. Try again later.', code: 'LOCKED_OUT' } 
+      });
+    } else {
+      // Reset after lockout period
+      failedAttempts.delete(clientIP);
+    }
+  }
+
+  // Only accept API key from header (not query params for security)
+  const apiKey = req.headers['x-admin-key'];
   
   if (!apiKey || apiKey !== process.env.ADMIN_API_KEY) {
+    // Track failed attempt
+    const current = failedAttempts.get(clientIP) || { count: 0, lastAttempt: 0 };
+    failedAttempts.set(clientIP, { count: current.count + 1, lastAttempt: Date.now() });
+    
+    console.log(`Admin auth failed from IP: ${clientIP} (attempt ${current.count + 1})`);
+    
     return res.status(401).json({ 
       success: false, 
-      error: { message: 'Unauthorized - Invalid admin key' } 
+      error: { message: 'Unauthorized', code: 'INVALID_ADMIN_KEY' } 
     });
   }
+  
+  // Clear failed attempts on success
+  failedAttempts.delete(clientIP);
   next();
 };
 
+router.use(adminRateLimiter);
 router.use(adminAuth);
 
 // ============================================
@@ -488,6 +537,92 @@ router.get('/stats', async (req: Request, res: Response, next: NextFunction) => 
         signupTrend: signupTrend.rows,
       },
     });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// ============================================
+// SECURITY - IP BLACKLIST
+// ============================================
+
+import { addToBlacklist, removeFromBlacklist, getBlacklist } from '../middleware/ipBlacklist';
+import { getAuditLogs, getSuspiciousActivity } from '../middleware/auditLogger';
+
+// Get all blacklisted IPs
+router.get('/security/blacklist', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const blacklist = await getBlacklist();
+    res.json({ success: true, data: { blacklist } });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Add IP to blacklist
+router.post('/security/blacklist', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { ip, reason, userId, expiresInHours } = req.body;
+    
+    if (!ip) {
+      return next(createError('IP address is required', 400, 'MISSING_IP'));
+    }
+
+    await addToBlacklist(ip, reason || 'Manual block by admin', userId, expiresInHours);
+    
+    await pool.query(`
+      INSERT INTO admin_logs (action, admin_note, metadata)
+      VALUES ($1, $2, $3)
+    `, ['ip_blacklisted', `Blocked IP: ${ip}`, JSON.stringify({ ip, reason, expiresInHours })]);
+
+    res.json({ success: true, data: { message: `IP ${ip} has been blacklisted` } });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Remove IP from blacklist
+router.delete('/security/blacklist/:ip', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { ip } = req.params;
+    await removeFromBlacklist(ip);
+    
+    await pool.query(`
+      INSERT INTO admin_logs (action, admin_note, metadata)
+      VALUES ($1, $2, $3)
+    `, ['ip_unblacklisted', `Unblocked IP: ${ip}`, JSON.stringify({ ip })]);
+
+    res.json({ success: true, data: { message: `IP ${ip} has been removed from blacklist` } });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// ============================================
+// SECURITY - AUDIT LOGS
+// ============================================
+
+// Get audit logs
+router.get('/security/audit-logs', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { userId, path, limit, offset } = req.query;
+    const logs = await getAuditLogs({
+      userId: userId as string,
+      path: path as string,
+      limit: limit ? parseInt(limit as string) : 100,
+      offset: offset ? parseInt(offset as string) : 0,
+    });
+    res.json({ success: true, data: { logs, count: logs.length } });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Get suspicious activity report
+router.get('/security/suspicious', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const suspicious = await getSuspiciousActivity();
+    res.json({ success: true, data: { suspicious } });
   } catch (error) {
     next(error);
   }
