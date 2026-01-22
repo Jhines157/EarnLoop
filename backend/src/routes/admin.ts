@@ -1,9 +1,12 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
-import nodemailer from 'nodemailer';
+import { Resend } from 'resend';
 import pool from '../db';
 import { createError } from '../middleware/errorHandler';
+
+// Initialize Resend
+const resend = new Resend(process.env.RESEND_API_KEY);
 
 const router = Router();
 
@@ -204,40 +207,28 @@ router.post('/users/:id/reset-password', async (req: Request, res: Response, nex
 // EMAIL FUNCTIONS
 // ============================================
 
-// Create email transporter
-const createTransporter = () => {
-  // Use Gmail service directly for better compatibility
-  if (process.env.SMTP_HOST === 'smtp.gmail.com') {
-    return nodemailer.createTransport({
-      service: 'gmail',
-      auth: {
-        user: process.env.SMTP_USER,
-        pass: process.env.SMTP_PASS,
-      },
-    });
+// Send email using Resend
+const sendEmail = async (to: string, subject: string, html: string) => {
+  const { data, error } = await resend.emails.send({
+    from: 'EarnLoop <support@earnloop.app>',
+    to: [to],
+    subject,
+    html,
+  });
+  
+  if (error) {
+    throw new Error(error.message);
   }
   
-  // Fallback to generic SMTP config
-  return nodemailer.createTransport({
-    host: process.env.SMTP_HOST,
-    port: parseInt(process.env.SMTP_PORT || '587'),
-    secure: parseInt(process.env.SMTP_PORT || '587') === 465,
-    auth: {
-      user: process.env.SMTP_USER,
-      pass: process.env.SMTP_PASS,
-    },
-  });
+  return data;
 };
 
 // Send password reset email
 const sendPasswordResetEmail = async (email: string, newPassword: string) => {
-  const transporter = createTransporter();
-  
-  await transporter.sendMail({
-    from: process.env.SMTP_FROM || 'EarnLoop <noreply@earnloop.app>',
-    to: email,
-    subject: 'Your EarnLoop Password Has Been Reset',
-    html: `
+  await sendEmail(
+    email,
+    'Your EarnLoop Password Has Been Reset',
+    `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
         <h2 style="color: #4F46E5;">Password Reset</h2>
         <p>Your EarnLoop password has been reset.</p>
@@ -246,8 +237,8 @@ const sendPasswordResetEmail = async (email: string, newPassword: string) => {
         <br>
         <p>- The EarnLoop Team</p>
       </div>
-    `,
-  });
+    `
+  );
 };
 
 // Send gift card email
@@ -273,17 +264,14 @@ router.post('/users/:id/send-gift-card', async (req: Request, res: Response, nex
 
     const user = userResult.rows[0];
 
-    if (!process.env.SMTP_HOST) {
-      return next(createError('Email not configured. Set SMTP environment variables.', 500, 'EMAIL_NOT_CONFIGURED'));
+    if (!process.env.RESEND_API_KEY) {
+      return next(createError('Email not configured. Set RESEND_API_KEY environment variable.', 500, 'EMAIL_NOT_CONFIGURED'));
     }
 
-    const transporter = createTransporter();
-    
-    await transporter.sendMail({
-      from: process.env.SMTP_FROM || 'EarnLoop <noreply@earnloop.app>',
-      to: user.email,
-      subject: `🎉 Your ${giftCardType} Gift Card from EarnLoop!`,
-      html: `
+    await sendEmail(
+      user.email,
+      `🎉 Your ${giftCardType} Gift Card from EarnLoop!`,
+      `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
           <div style="background: linear-gradient(135deg, #4F46E5 0%, #7C3AED 100%); padding: 30px; border-radius: 12px; text-align: center;">
             <h1 style="color: white; margin: 0;">🎁 You've Got a Gift Card!</h1>
@@ -314,8 +302,8 @@ router.post('/users/:id/send-gift-card', async (req: Request, res: Response, nex
             <p style="margin: 0;">Keep earning with EarnLoop! 🚀</p>
           </div>
         </div>
-      `,
-    });
+      `
+    );
 
     // Log the gift card send
     await pool.query(`
@@ -363,13 +351,11 @@ router.post('/bulk-send-gift-cards', async (req: Request, res: Response, next: N
         }
 
         const user = userResult.rows[0];
-        const transporter = createTransporter();
 
-        await transporter.sendMail({
-          from: process.env.SMTP_FROM || 'EarnLoop <noreply@earnloop.app>',
-          to: user.email,
-          subject: `🎉 Your ${recipient.giftCardType || 'Amazon'} Gift Card from EarnLoop!`,
-          html: `
+        await sendEmail(
+          user.email,
+          `🎉 Your ${recipient.giftCardType || 'Amazon'} Gift Card from EarnLoop!`,
+          `
             <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
               <div style="background: linear-gradient(135deg, #4F46E5 0%, #7C3AED 100%); padding: 30px; border-radius: 12px; text-align: center;">
                 <h1 style="color: white; margin: 0;">🎁 You've Got a Gift Card!</h1>
@@ -385,8 +371,8 @@ router.post('/bulk-send-gift-cards', async (req: Request, res: Response, next: N
                 </div>
               </div>
             </div>
-          `,
-        });
+          `
+        );
 
         results.push({ userId: recipient.userId, email: user.email, success: true });
       } catch (err: any) {
