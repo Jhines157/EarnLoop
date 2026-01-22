@@ -318,38 +318,6 @@ export const TOKEN_STORE_ITEMS: TokenStoreItem[] = [
     category: 'mystery_bag',
     emoji: '🎊',
   },
-  {
-    id: 'theme_dark_gold',
-    name: 'Dark Gold Theme',
-    description: 'Exclusive dark gold app theme',
-    tokenCost: 150,
-    category: 'cosmetic',
-    emoji: '🌟',
-  },
-  {
-    id: 'theme_neon',
-    name: 'Neon Theme',
-    description: 'Vibrant neon color scheme',
-    tokenCost: 150,
-    category: 'cosmetic',
-    emoji: '💜',
-  },
-  {
-    id: 'badge_vip',
-    name: 'VIP Badge',
-    description: 'Show off your VIP status',
-    tokenCost: 300,
-    category: 'cosmetic',
-    emoji: '👑',
-  },
-  {
-    id: 'boost_2x_1hr',
-    name: '2x Boost (1 Hour)',
-    description: 'Double credits for 1 hour!',
-    tokenCost: 75,
-    category: 'boost',
-    emoji: '⚡',
-  },
 ];
 
 // Legacy export for backwards compatibility

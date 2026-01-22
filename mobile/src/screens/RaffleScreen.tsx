@@ -521,9 +521,9 @@ const RaffleScreen = () => {
         </View>
 
         {/* Token Store Section */}
-        <Text style={styles.sectionTitle}>🛒 Token Store</Text>
+        <Text style={styles.sectionTitle}>🎁 Mystery Bags</Text>
         <Text style={[styles.subtitle, { marginBottom: spacing.md }]}>
-          Spend tokens on mystery bags, themes & boosts!
+          Spend tokens for a chance at bonus credits!
         </Text>
         
         {TOKEN_STORE_ITEMS.map((item) => (
