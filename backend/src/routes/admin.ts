@@ -81,6 +81,54 @@ router.use(adminRateLimiter);
 router.use(adminAuth);
 
 // ============================================
+// DATABASE MIGRATIONS (run once)
+// ============================================
+
+router.post('/run-migrations', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    // IP Blacklist table
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS ip_blacklist (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        ip_address VARCHAR(45) UNIQUE NOT NULL,
+        reason TEXT,
+        user_id UUID,
+        expires_at TIMESTAMP WITH TIME ZONE,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+      );
+    `);
+
+    // Audit logs table
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS audit_logs (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        method VARCHAR(10) NOT NULL,
+        path VARCHAR(255) NOT NULL,
+        ip_address VARCHAR(45),
+        user_id UUID,
+        user_agent TEXT,
+        request_body JSONB,
+        response_status VARCHAR(20),
+        status_code INTEGER,
+        duration_ms INTEGER,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+      );
+    `);
+
+    // Indexes
+    await pool.query(`
+      CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON audit_logs (created_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_audit_logs_ip ON audit_logs (ip_address);
+    `);
+
+    res.json({ success: true, data: { message: 'Migrations completed successfully' } });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// ============================================
 // USER MANAGEMENT
 // ============================================
 
