@@ -122,6 +122,39 @@ router.get('/admob-ssv', async (req: Request, res: Response) => {
 router.use(authenticate);
 router.use(earnRateLimiter);
 
+// Level thresholds and bonuses
+const LEVEL_CONFIG = [
+  { id: 'bronze', minCredits: 0, bonusPercent: 0, extraTokens: 0 },
+  { id: 'silver', minCredits: 500, bonusPercent: 5, extraTokens: 1 },
+  { id: 'gold', minCredits: 2000, bonusPercent: 10, extraTokens: 2 },
+  { id: 'platinum', minCredits: 5000, bonusPercent: 15, extraTokens: 3 },
+  { id: 'diamond', minCredits: 10000, bonusPercent: 25, extraTokens: 5 },
+];
+
+// Get user's level and bonus based on lifetime earnings
+const getUserLevelBonus = async (userId: string): Promise<{ levelId: string; bonusPercent: number; extraTokens: number }> => {
+  const result = await pool.query(
+    'SELECT lifetime_earned FROM balances WHERE user_id = $1',
+    [userId]
+  );
+  
+  const lifetimeEarned = result.rows[0]?.lifetime_earned || 0;
+  
+  // Find highest level user qualifies for
+  for (let i = LEVEL_CONFIG.length - 1; i >= 0; i--) {
+    if (lifetimeEarned >= LEVEL_CONFIG[i].minCredits) {
+      return LEVEL_CONFIG[i];
+    }
+  }
+  return LEVEL_CONFIG[0];
+};
+
+// Apply level bonus to credits
+const applyLevelBonus = (baseCredits: number, bonusPercent: number): { total: number; bonus: number } => {
+  const bonus = Math.floor(baseCredits * (bonusPercent / 100));
+  return { total: baseCredits + bonus, bonus };
+};
+
 // Get today's credits earned (helper)
 const getTodayEarned = async (userId: string): Promise<number> => {
   const result = await pool.query(
@@ -170,7 +203,11 @@ const canEarnMore = async (userId: string, amount: number): Promise<{ canEarn: b
 router.post('/checkin', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const userId = req.userId!;
-    const rewardAmount = parseInt(process.env.CHECKIN_REWARD || '5');
+    const baseReward = parseInt(process.env.CHECKIN_REWARD || '5');
+
+    // Get user's level bonus
+    const levelBonus = await getUserLevelBonus(userId);
+    const { total: rewardAmount, bonus: bonusCredits } = applyLevelBonus(baseReward, levelBonus.bonusPercent);
 
     // Check daily cap
     const { canEarn, remaining } = await canEarnMore(userId, rewardAmount);
@@ -215,15 +252,16 @@ router.post('/checkin', async (req: AuthRequest, res: Response, next: NextFuncti
       }
     }
 
-    // Record earn event
+    // Record earn event (with bonus noted in metadata)
     await pool.query(
-      `INSERT INTO earn_events (user_id, device_id, event_type, credits_amount, ip_address)
-       VALUES ($1, $2, 'checkin', $3, $4)`,
-      [userId, req.deviceId, rewardAmount, req.ip]
+      `INSERT INTO earn_events (user_id, device_id, event_type, credits_amount, ip_address, metadata)
+       VALUES ($1, $2, 'checkin', $3, $4, $5)`,
+      [userId, req.deviceId, rewardAmount, req.ip, JSON.stringify({ baseReward, bonusCredits, level: levelBonus.levelId })]
     );
 
-    // Update balance (credits + tokens)
-    const tokenReward = 5; // Tokens for daily check-in
+    // Update balance (credits + tokens with level bonus)
+    const baseTokens = 5;
+    const tokenReward = baseTokens + levelBonus.extraTokens;
     await pool.query(
       `UPDATE balances 
        SET credits_balance = credits_balance + $1, 
@@ -282,7 +320,13 @@ router.post('/rewarded-ad-complete', async (req: AuthRequest, res: Response, nex
   try {
     const userId = req.userId!;
     const { adUnitId, rewardToken, timestamp } = req.body;
-    let rewardAmount = parseInt(process.env.AD_REWARD || '10');
+    const baseReward = parseInt(process.env.AD_REWARD || '10');
+    
+    // Get user's level bonus
+    const levelBonus = await getUserLevelBonus(userId);
+    const { total: levelBoostedReward, bonus: levelBonusCredits } = applyLevelBonus(baseReward, levelBonus.bonusPercent);
+    
+    let rewardAmount = levelBoostedReward;
 
     // TODO: Implement AdMob SSV verification here
     // For now, we'll do basic validation
@@ -290,7 +334,7 @@ router.post('/rewarded-ad-complete', async (req: AuthRequest, res: Response, nex
       return next(createError('Invalid ad completion data', 400, 'INVALID_AD_DATA'));
     }
 
-    // Check for active XP boost
+    // Check for active XP boost (stacks with level bonus!)
     const boostCheck = await pool.query(`
       SELECT ui.*, si.name FROM user_inventory ui
       JOIN store_items si ON ui.item_id = si.id
@@ -302,7 +346,7 @@ router.post('/rewarded-ad-complete', async (req: AuthRequest, res: Response, nex
     
     let xpBoostApplied = false;
     if (boostCheck.rows.length > 0) {
-      rewardAmount = rewardAmount * 2; // 2x boost!
+      rewardAmount = rewardAmount * 2; // 2x boost stacks with level bonus!
       xpBoostApplied = true;
     }
 
@@ -337,15 +381,24 @@ router.post('/rewarded-ad-complete', async (req: AuthRequest, res: Response, nex
     }
     */
 
-    // Record earn event
+    // Record earn event with bonus breakdown
     await pool.query(
       `INSERT INTO earn_events (user_id, device_id, event_type, credits_amount, ip_address, metadata)
        VALUES ($1, $2, 'rewarded_ad', $3, $4, $5)`,
-      [userId, req.deviceId, rewardAmount, req.ip, JSON.stringify({ adUnitId, rewardToken, timestamp })]
+      [userId, req.deviceId, rewardAmount, req.ip, JSON.stringify({ 
+        adUnitId, 
+        rewardToken, 
+        timestamp,
+        baseReward,
+        levelBonus: levelBonusCredits,
+        level: levelBonus.levelId,
+        xpBoostApplied
+      })]
     );
 
-    // Update balance (credits + 1 token per ad)
-    const tokenReward = 1;
+    // Update balance (credits + tokens with level bonus)
+    const baseTokens = 1;
+    const tokenReward = baseTokens + Math.floor(levelBonus.extraTokens / 5); // Smaller bonus for ads
     await pool.query(
       `UPDATE balances 
        SET credits_balance = credits_balance + $1, 
@@ -371,7 +424,8 @@ router.post('/rewarded-ad-complete', async (req: AuthRequest, res: Response, nex
         newTokenBalance: balanceResult.rows[0].tokens,
         adsWatchedToday: parseInt(todayAds.rows[0].count) + 1,
         xpBoostApplied,
-        baseReward: parseInt(process.env.AD_REWARD || '10'),
+        levelBonus: levelBonusCredits > 0 ? `+${levelBonusCredits} (${levelBonus.levelId} bonus)` : null,
+        baseReward,
       },
     });
   } catch (error) {

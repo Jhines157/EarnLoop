@@ -19,7 +19,7 @@ export const USER_LEVELS: UserLevel[] = [
     name: 'Bronze',
     emoji: '🥉',
     minCredits: 0,
-    perks: ['Welcome to EarnLoop!'],
+    perks: ['Base earnings rate', '5 tokens per check-in'],
     color: '#CD7F32',
   },
   {
@@ -27,7 +27,7 @@ export const USER_LEVELS: UserLevel[] = [
     name: 'Silver',
     emoji: '🥈',
     minCredits: 500,
-    perks: ['Silver status achieved!'],
+    perks: ['+5% bonus on all earnings', '+1 extra token per check-in'],
     color: '#C0C0C0',
   },
   {
@@ -35,7 +35,7 @@ export const USER_LEVELS: UserLevel[] = [
     name: 'Gold',
     emoji: '🥇',
     minCredits: 2000,
-    perks: ['Gold member!'],
+    perks: ['+10% bonus on all earnings', '+2 extra tokens per check-in'],
     color: '#FFD700',
   },
   {
@@ -43,7 +43,7 @@ export const USER_LEVELS: UserLevel[] = [
     name: 'Platinum',
     emoji: '💎',
     minCredits: 5000,
-    perks: ['Platinum elite!'],
+    perks: ['+15% bonus on all earnings', '+3 extra tokens per check-in'],
     color: '#E5E4E2',
   },
   {
@@ -51,7 +51,7 @@ export const USER_LEVELS: UserLevel[] = [
     name: 'Diamond',
     emoji: '👑',
     minCredits: 10000,
-    perks: ['Diamond legend!'],
+    perks: ['+25% bonus on all earnings', '+5 extra tokens per check-in'],
     color: '#B9F2FF',
   },
 ];
