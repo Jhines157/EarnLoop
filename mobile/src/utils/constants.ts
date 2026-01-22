@@ -1,6 +1,6 @@
 // API Configuration
-// Production URL (Railway)
-export const API_URL = 'https://earnloop-production.up.railway.app';
+// Production URL (Custom domain - never changes)
+export const API_URL = 'https://api.earnloop.app';
 
 // Earn limits (should match backend)
 export const EARN_CONFIG = {
