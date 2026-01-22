@@ -60,14 +60,10 @@ router.get('/items', async (req: AuthRequest, res: Response, next: NextFunction)
       });
     });
 
-    // Category display info
+    // Category display info - only categories with working items
     const categories = [
-      { id: 'giftcards', name: 'Gift Cards', icon: '🎁', description: 'Redeem for real rewards' },
-      { id: 'cosmetics', name: 'Cosmetics', icon: '🎨', description: 'Themes & customization' },
-      { id: 'gamification', name: 'Boosts & Power-ups', icon: '🎮', description: 'Level up faster' },
-      { id: 'giveaways', name: 'Giveaway Perks', icon: '🎟️', description: 'Improve your odds' },
-      { id: 'premium', name: 'Premium Content', icon: '📚', description: 'Exclusive lessons' },
-      { id: 'vip', name: 'VIP', icon: '👑', description: 'Status & recognition' },
+      { id: 'giftcards', name: 'Gift Cards', icon: '🎁', description: 'Redeem for real gift cards!' },
+      { id: 'powerups', name: 'Power-ups', icon: '⚡', description: 'Boost your earnings!' },
     ];
 
     res.json({
