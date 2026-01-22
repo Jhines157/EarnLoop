@@ -144,6 +144,9 @@ const EarnScreen = () => {
       await adMobService.showAd({
         onEarnedReward: async (reward) => {
           try {
+            // Ensure token is loaded before making API call
+            await api.loadToken();
+            
             // Generate unique token using timestamp + random
             const uniqueToken = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
             const response = await api.completeRewardedAd(
@@ -152,14 +155,16 @@ const EarnScreen = () => {
             );
             if (response.success && response.data) {
               updateBalance(response.data.newBalance);
-              const tokensMsg = response.data.tokensEarned ? `\n+${response.data.tokensEarned} Fun Token! 🎰` : '';
+              const tokensMsg = (response.data as any).tokensEarned ? `\n+${(response.data as any).tokensEarned} Fun Token! 🎰` : '';
               Alert.alert('Ad Complete! 🎬', `You earned ${response.data.creditsEarned} credits!${tokensMsg}`);
               loadEarnStatus();
             } else {
+              console.error('Ad reward API error:', response.error);
               Alert.alert('Error', response.error?.message || 'Failed to process ad reward');
             }
-          } catch (error) {
-            Alert.alert('Error', 'Something went wrong');
+          } catch (error: any) {
+            console.error('Ad reward error:', error);
+            Alert.alert('Error', error?.message || 'Network error - please check your connection');
           }
         },
         onAdClosed: () => {
