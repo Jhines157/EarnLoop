@@ -88,6 +88,19 @@ router.post('/run-migrations', async (req: Request, res: Response, next: NextFun
   try {
     const results: string[] = [];
 
+    // Add unique constraint on store_items name
+    await pool.query(`
+      DO $$ 
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1 FROM pg_constraint WHERE conname = 'store_items_name_key'
+        ) THEN
+          ALTER TABLE store_items ADD CONSTRAINT store_items_name_key UNIQUE (name);
+        END IF;
+      END $$;
+    `);
+    results.push('store_items name unique constraint');
+
     // User inventory table (for owned items and active boosts)
     await pool.query(`
       CREATE TABLE IF NOT EXISTS user_inventory (
