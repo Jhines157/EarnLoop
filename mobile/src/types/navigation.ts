@@ -6,6 +6,7 @@
 export type RootStackParamList = {
   MainTabs: undefined;
   Learn: undefined;
+  ChangePassword: undefined;
 };
 
 // Tab navigator param list

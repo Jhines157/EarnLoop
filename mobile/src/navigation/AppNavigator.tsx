@@ -38,6 +38,7 @@ import PrivacyScreen from '../screens/PrivacyScreen';
 import NotificationsScreen from '../screens/NotificationsScreen';
 import AppearanceScreen from '../screens/AppearanceScreen';
 import ForgotPasswordScreen from '../screens/ForgotPasswordScreen';
+import ChangePasswordScreen from '../screens/ChangePasswordScreen';
 
 // Styles defined early to avoid reference errors
 const styles = StyleSheet.create({
@@ -280,6 +281,14 @@ const MainStack = () => {
       <RootStack.Screen 
         name="Appearance" 
         component={AppearanceScreen}
+        options={{ 
+          headerShown: false,
+          presentation: 'modal',
+        }}
+      />
+      <RootStack.Screen 
+        name="ChangePassword" 
+        component={ChangePasswordScreen}
         options={{ 
           headerShown: false,
           presentation: 'modal',

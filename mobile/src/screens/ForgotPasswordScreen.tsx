@@ -107,7 +107,7 @@ export default function ForgotPasswordScreen({ navigation }: any) {
     title: {
       fontSize: 28,
       fontWeight: 'bold',
-      color: colors.text,
+      color: colors.textPrimary,
       textAlign: 'center',
       marginBottom: 8,
     },
@@ -124,15 +124,15 @@ export default function ForgotPasswordScreen({ navigation }: any) {
     label: {
       fontSize: 14,
       fontWeight: '600',
-      color: colors.text,
+      color: colors.textPrimary,
       marginBottom: 8,
     },
     input: {
-      backgroundColor: colors.card,
+      backgroundColor: colors.backgroundCard,
       borderRadius: 12,
       padding: 16,
       fontSize: 16,
-      color: colors.text,
+      color: colors.textPrimary,
       borderWidth: 1,
       borderColor: colors.border,
     },
@@ -144,7 +144,7 @@ export default function ForgotPasswordScreen({ navigation }: any) {
     passwordContainer: {
       flexDirection: 'row',
       alignItems: 'center',
-      backgroundColor: colors.card,
+      backgroundColor: colors.backgroundCard,
       borderRadius: 12,
       borderWidth: 1,
       borderColor: colors.border,
@@ -153,7 +153,7 @@ export default function ForgotPasswordScreen({ navigation }: any) {
       flex: 1,
       padding: 16,
       fontSize: 16,
-      color: colors.text,
+      color: colors.textPrimary,
     },
     eyeButton: {
       padding: 16,

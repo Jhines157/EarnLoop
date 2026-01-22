@@ -183,6 +183,47 @@ router.delete('/delete-account', authenticate, async (req: AuthRequest, res: Res
   }
 });
 
+// Change password (authenticated user)
+router.post('/change-password', authenticate, async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const userId = req.userId!;
+    const { currentPassword, newPassword } = req.body;
+
+    if (!currentPassword || !newPassword) {
+      return next(createError('Current password and new password are required', 400, 'MISSING_FIELDS'));
+    }
+
+    if (newPassword.length < 8) {
+      return next(createError('New password must be at least 8 characters', 400, 'PASSWORD_TOO_SHORT'));
+    }
+
+    // Get current password hash
+    const userResult = await pool.query('SELECT password_hash FROM users WHERE id = $1', [userId]);
+    if (userResult.rows.length === 0) {
+      return next(createError('User not found', 404, 'USER_NOT_FOUND'));
+    }
+
+    // Verify current password
+    const isValid = await bcrypt.compare(currentPassword, userResult.rows[0].password_hash);
+    if (!isValid) {
+      return next(createError('Current password is incorrect', 401, 'INVALID_PASSWORD'));
+    }
+
+    // Hash new password and update
+    const newPasswordHash = await bcrypt.hash(newPassword, 12);
+    await pool.query('UPDATE users SET password_hash = $1, updated_at = NOW() WHERE id = $2', [newPasswordHash, userId]);
+
+    res.json({
+      success: true,
+      data: {
+        message: 'Password changed successfully',
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 // ============================================
 // PASSWORD RESET (User Self-Service)
 // ============================================

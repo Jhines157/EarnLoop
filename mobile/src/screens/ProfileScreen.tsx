@@ -345,6 +345,15 @@ const ProfileScreen = () => {
             <Text style={styles.menuItemText}>Appearance</Text>
             <Text style={styles.menuItemArrow}>›</Text>
           </TouchableOpacity>
+
+          <TouchableOpacity 
+            style={styles.menuItem}
+            onPress={() => navigation.navigate('ChangePassword')}
+          >
+            <Text style={styles.menuItemIcon}>🔑</Text>
+            <Text style={styles.menuItemText}>Change Password</Text>
+            <Text style={styles.menuItemArrow}>›</Text>
+          </TouchableOpacity>
         </View>
 
         <View style={styles.section}>

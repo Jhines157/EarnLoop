@@ -213,6 +213,13 @@ class ApiClient {
     });
   }
 
+  async changePassword(currentPassword: string, newPassword: string) {
+    return this.request<{ message: string }>('/auth/change-password', {
+      method: 'POST',
+      body: JSON.stringify({ currentPassword, newPassword }),
+    });
+  }
+
   // Giveaway endpoints
   async getGiveawayEntries() {
     return this.request<{
