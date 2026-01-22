@@ -263,7 +263,10 @@ router.post('/seed-store', async (req: Request, res: Response, next: NextFunctio
         ('DeFi Masterclass', 'Coming soon! DeFi lessons', 700, 'content', 'coming_soon', NULL, 1, '🏦', 109, false),
         ('VIP Badge', 'Coming soon! VIP status badge', 1000, 'badge', 'coming_soon', NULL, 1, '👑', 110, false),
         ('Founder Badge', 'Coming soon! Founder badge', 2000, 'badge', 'coming_soon', NULL, 1, '🏆', 111, false),
-        ('Pro Member (30 days)', 'Coming soon! Pro membership', 1500, 'subscription', 'coming_soon', 30, NULL, '⭐', 112, false)
+        ('Pro Member (30 days)', 'Coming soon! Pro membership', 1500, 'subscription', 'coming_soon', 30, NULL, '⭐', 112, false),
+        -- Disable old items with different names
+        ('2x XP Boost (24h)', 'Replaced by 2x Credits Boost', 100, 'boost', 'coming_soon', 1, NULL, '⚡', 200, false),
+        ('2x XP Boost (7 days)', 'Replaced by 2x Credits Boost', 500, 'boost', 'coming_soon', 7, NULL, '🚀', 201, false)
       ON CONFLICT (name) DO UPDATE SET 
         description = EXCLUDED.description,
         credits_cost = EXCLUDED.credits_cost,
