@@ -14,7 +14,6 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { useTheme } from '../context/ThemeContext';
 import api from '../services/api';
-import { spacing, borderRadius, typography } from '../utils/theme';
 
 const ChangePasswordScreen = () => {
   const navigation = useNavigation();
@@ -207,93 +206,93 @@ const createStyles = (colors: any) =>
       backgroundColor: colors.background,
     },
     content: {
-      padding: spacing.lg,
+      padding: 24,
     },
     header: {
-      marginBottom: spacing.xl,
+      marginBottom: 32,
     },
     backButton: {
       color: colors.primary,
-      fontSize: typography.sizes.md,
-      marginBottom: spacing.sm,
+      fontSize: 16,
+      marginBottom: 8,
     },
     title: {
-      fontSize: typography.sizes.xxl,
-      fontWeight: typography.weights.bold as any,
+      fontSize: 28,
+      fontWeight: '700',
       color: colors.textPrimary,
     },
     infoBox: {
       flexDirection: 'row',
       alignItems: 'center',
       backgroundColor: colors.backgroundCard,
-      padding: spacing.md,
-      borderRadius: borderRadius.md,
-      marginBottom: spacing.xl,
+      padding: 16,
+      borderRadius: 14,
+      marginBottom: 32,
     },
     infoIcon: {
       fontSize: 24,
-      marginRight: spacing.sm,
+      marginRight: 8,
     },
     infoText: {
       flex: 1,
       color: colors.textSecondary,
-      fontSize: typography.sizes.sm,
+      fontSize: 14,
       lineHeight: 20,
     },
     form: {
-      marginBottom: spacing.xl,
+      marginBottom: 32,
     },
     inputContainer: {
-      marginBottom: spacing.lg,
+      marginBottom: 24,
     },
     label: {
       color: colors.textPrimary,
-      fontSize: typography.sizes.sm,
-      fontWeight: typography.weights.medium as any,
-      marginBottom: spacing.xs,
+      fontSize: 14,
+      fontWeight: '500',
+      marginBottom: 4,
     },
     passwordContainer: {
       flexDirection: 'row',
       alignItems: 'center',
       backgroundColor: colors.backgroundCard,
-      borderRadius: borderRadius.md,
+      borderRadius: 14,
       borderWidth: 1,
       borderColor: colors.border,
     },
     input: {
       flex: 1,
       color: colors.textPrimary,
-      fontSize: typography.sizes.md,
-      padding: spacing.md,
+      fontSize: 16,
+      padding: 16,
     },
     inputFull: {
       backgroundColor: colors.backgroundCard,
-      borderRadius: borderRadius.md,
+      borderRadius: 14,
       borderWidth: 1,
       borderColor: colors.border,
       color: colors.textPrimary,
-      fontSize: typography.sizes.md,
-      padding: spacing.md,
+      fontSize: 16,
+      padding: 16,
     },
     eyeButton: {
-      padding: spacing.md,
+      padding: 16,
     },
     strengthContainer: {
       flexDirection: 'row',
       alignItems: 'center',
-      marginTop: spacing.sm,
+      marginTop: 8,
     },
     strengthLabel: {
       color: colors.textSecondary,
-      fontSize: typography.sizes.xs,
-      marginRight: spacing.sm,
+      fontSize: 12,
+      marginRight: 8,
     },
     strengthBar: {
       flex: 1,
       height: 4,
       backgroundColor: colors.border,
       borderRadius: 2,
-      marginRight: spacing.sm,
+      marginRight: 8,
     },
     strengthFill: {
       height: '100%',
@@ -301,13 +300,13 @@ const createStyles = (colors: any) =>
     },
     strengthText: {
       color: colors.textSecondary,
-      fontSize: typography.sizes.xs,
+      fontSize: 12,
       width: 50,
     },
     button: {
       backgroundColor: colors.primary,
-      padding: spacing.md,
-      borderRadius: borderRadius.md,
+      padding: 16,
+      borderRadius: 14,
       alignItems: 'center',
     },
     buttonDisabled: {
@@ -315,8 +314,8 @@ const createStyles = (colors: any) =>
     },
     buttonText: {
       color: '#FFFFFF',
-      fontSize: typography.sizes.md,
-      fontWeight: typography.weights.semibold as any,
+      fontSize: 16,
+      fontWeight: '600',
     },
   });
 
