@@ -168,6 +168,15 @@ router.post('/run-migrations', async (req: Request, res: Response, next: NextFun
     `);
     results.push('giveaway_entries table');
 
+    // Add unique constraint on store_items name for upsert
+    await pool.query(`
+      ALTER TABLE store_items 
+      ADD CONSTRAINT IF NOT EXISTS store_items_name_unique UNIQUE (name);
+    `).catch(() => {
+      // Constraint might already exist or syntax not supported
+    });
+    results.push('store_items unique constraint');
+
     // Indexes
     await pool.query(`
       CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON audit_logs (created_at DESC);
@@ -205,52 +214,58 @@ router.get('/store-items', async (req: Request, res: Response, next: NextFunctio
 // Seed store items
 router.post('/seed-store', async (req: Request, res: Response, next: NextFunction) => {
   try {
-    // Clear existing store items
-    await pool.query('DELETE FROM store_items WHERE TRUE');
-
-    // Seed store items with categories
+    // Use upsert to add/update store items without deleting existing ones (keeps foreign key references)
     await pool.query(`
-      INSERT INTO store_items (name, description, credits_cost, item_type, category, duration_days, max_per_user, icon, sort_order)
+      INSERT INTO store_items (name, description, credits_cost, item_type, category, duration_days, max_per_user, icon, sort_order, is_active)
       VALUES 
         -- Gift Cards
-        ('$5 Amazon Gift Card', 'Digital Amazon gift card code sent to your email', 5000, 'giftcard', 'giftcards', NULL, NULL, '🛒', 1),
-        ('$10 Amazon Gift Card', 'Digital Amazon gift card code sent to your email', 9500, 'giftcard', 'giftcards', NULL, NULL, '🛒', 2),
-        ('$25 Amazon Gift Card', 'Digital Amazon gift card code sent to your email', 23000, 'giftcard', 'giftcards', NULL, NULL, '🛒', 3),
-        ('$5 Apple Gift Card', 'Digital Apple gift card code sent to your email', 5000, 'giftcard', 'giftcards', NULL, NULL, '🍎', 4),
-        ('$10 Apple Gift Card', 'Digital Apple gift card code sent to your email', 9500, 'giftcard', 'giftcards', NULL, NULL, '🍎', 5),
-        ('$25 Apple Gift Card', 'Digital Apple gift card code sent to your email', 23000, 'giftcard', 'giftcards', NULL, NULL, '🍎', 6),
-        ('$5 Google Play Gift Card', 'Digital Google Play gift card code sent to your email', 5000, 'giftcard', 'giftcards', NULL, NULL, '🎮', 7),
-        ('$10 Google Play Gift Card', 'Digital Google Play gift card code sent to your email', 9500, 'giftcard', 'giftcards', NULL, NULL, '🎮', 8),
-        ('$5 Starbucks Gift Card', 'Digital Starbucks gift card code sent to your email', 5000, 'giftcard', 'giftcards', NULL, NULL, '☕', 9),
-        ('$10 Starbucks Gift Card', 'Digital Starbucks gift card code sent to your email', 9500, 'giftcard', 'giftcards', NULL, NULL, '☕', 10),
+        ('$5 Amazon Gift Card', 'Digital Amazon gift card code sent to your email', 5000, 'giftcard', 'giftcards', NULL, NULL, '🛒', 1, true),
+        ('$10 Amazon Gift Card', 'Digital Amazon gift card code sent to your email', 9500, 'giftcard', 'giftcards', NULL, NULL, '🛒', 2, true),
+        ('$25 Amazon Gift Card', 'Digital Amazon gift card code sent to your email', 23000, 'giftcard', 'giftcards', NULL, NULL, '🛒', 3, true),
+        ('$5 Apple Gift Card', 'Digital Apple gift card code sent to your email', 5000, 'giftcard', 'giftcards', NULL, NULL, '🍎', 4, true),
+        ('$10 Apple Gift Card', 'Digital Apple gift card code sent to your email', 9500, 'giftcard', 'giftcards', NULL, NULL, '🍎', 5, true),
+        ('$25 Apple Gift Card', 'Digital Apple gift card code sent to your email', 23000, 'giftcard', 'giftcards', NULL, NULL, '🍎', 6, true),
+        ('$5 Google Play Gift Card', 'Digital Google Play gift card code sent to your email', 5000, 'giftcard', 'giftcards', NULL, NULL, '🎮', 7, true),
+        ('$10 Google Play Gift Card', 'Digital Google Play gift card code sent to your email', 9500, 'giftcard', 'giftcards', NULL, NULL, '🎮', 8, true),
+        ('$5 Starbucks Gift Card', 'Digital Starbucks gift card code sent to your email', 5000, 'giftcard', 'giftcards', NULL, NULL, '☕', 9, true),
+        ('$10 Starbucks Gift Card', 'Digital Starbucks gift card code sent to your email', 9500, 'giftcard', 'giftcards', NULL, NULL, '☕', 10, true),
         
         -- Cosmetics
-        ('Dark Mode Pro', 'Unlock the sleek dark theme with OLED blacks', 100, 'cosmetic', 'cosmetics', NULL, 1, '🌙', 20),
-        ('Neon Theme Pack', 'Vibrant neon colors that pop', 250, 'cosmetic', 'cosmetics', NULL, 1, '💜', 21),
-        ('Gold Theme', 'Luxurious gold accents everywhere', 300, 'cosmetic', 'cosmetics', NULL, 1, '✨', 22),
-        ('Custom App Icon - Bitcoin', 'Orange Bitcoin icon for your home screen', 150, 'cosmetic', 'cosmetics', NULL, 1, '🟠', 23),
-        ('Custom App Icon - Diamond', 'Diamond icon to show your status', 200, 'cosmetic', 'cosmetics', NULL, 1, '💎', 24),
+        ('Dark Mode Pro', 'Unlock the sleek dark theme with OLED blacks', 100, 'cosmetic', 'cosmetics', NULL, 1, '🌙', 20, true),
+        ('Neon Theme Pack', 'Vibrant neon colors that pop', 250, 'cosmetic', 'cosmetics', NULL, 1, '💜', 21, true),
+        ('Gold Theme', 'Luxurious gold accents everywhere', 300, 'cosmetic', 'cosmetics', NULL, 1, '✨', 22, true),
+        ('Custom App Icon - Bitcoin', 'Orange Bitcoin icon for your home screen', 150, 'cosmetic', 'cosmetics', NULL, 1, '🟠', 23, true),
+        ('Custom App Icon - Diamond', 'Diamond icon to show your status', 200, 'cosmetic', 'cosmetics', NULL, 1, '💎', 24, true),
         
         -- Gamification
-        ('Streak Saver', 'Protects your streak if you miss a day (single use)', 150, 'consumable', 'gamification', NULL, NULL, '🛡️', 30),
-        ('2x XP Boost (24h)', 'Double your XP earnings for 24 hours', 100, 'boost', 'gamification', 1, NULL, '⚡', 31),
-        ('2x XP Boost (7 days)', 'Double your XP earnings for a full week', 500, 'boost', 'gamification', 7, NULL, '🚀', 32),
-        ('Streak Freeze', 'Automatically save your streak once (lasts until used)', 300, 'consumable', 'gamification', NULL, NULL, '❄️', 33),
+        ('Streak Saver', 'Protects your streak if you miss a day (single use)', 150, 'consumable', 'gamification', NULL, NULL, '🛡️', 30, true),
+        ('2x XP Boost (24h)', 'Double your XP earnings for 24 hours', 100, 'boost', 'gamification', 1, NULL, '⚡', 31, true),
+        ('2x XP Boost (7 days)', 'Double your XP earnings for a full week', 500, 'boost', 'gamification', 7, NULL, '🚀', 32, true),
+        ('Streak Freeze', 'Automatically save your streak once (lasts until used)', 300, 'consumable', 'gamification', NULL, NULL, '❄️', 33, true),
         
         -- Giveaway Perks
-        ('Bonus Giveaway Entry', 'Get +1 extra entry to the current giveaway', 200, 'giveaway', 'giveaways', NULL, 5, '🎟️', 40),
-        ('Early Access Pass', 'Get notified about giveaways 24h before everyone else', 400, 'feature', 'giveaways', 30, NULL, '🔔', 41),
+        ('Bonus Giveaway Entry', 'Get +1 extra entry to the current giveaway', 200, 'giveaway', 'giveaways', NULL, 5, '🎟️', 40, true),
+        ('Early Access Pass', 'Get notified about giveaways 24h before everyone else', 400, 'feature', 'giveaways', 30, NULL, '🔔', 41, true),
         
         -- Premium Content
-        ('Advanced Bitcoin Lessons', 'Unlock 10 advanced lessons on Bitcoin & crypto', 500, 'content', 'premium', NULL, 1, '📖', 50),
-        ('Trading Strategies Guide', 'Expert guide on reading charts and patterns', 600, 'content', 'premium', NULL, 1, '📈', 51),
-        ('DeFi Masterclass', 'Learn about decentralized finance', 700, 'content', 'premium', NULL, 1, '🏦', 52),
+        ('Advanced Bitcoin Lessons', 'Unlock 10 advanced lessons on Bitcoin & crypto', 500, 'content', 'premium', NULL, 1, '📖', 50, true),
+        ('Trading Strategies Guide', 'Expert guide on reading charts and patterns', 600, 'content', 'premium', NULL, 1, '📈', 51, true),
+        ('DeFi Masterclass', 'Learn about decentralized finance', 700, 'content', 'premium', NULL, 1, '🏦', 52, true),
         
         -- VIP
-        ('VIP Badge', 'Show off your VIP status on your profile', 1000, 'badge', 'vip', NULL, 1, '👑', 60),
-        ('Founder Badge', 'Limited edition badge for early supporters', 2000, 'badge', 'vip', NULL, 1, '🏆', 61),
-        ('Pro Member (30 days)', 'All premium features for 30 days', 1500, 'subscription', 'vip', 30, NULL, '⭐', 62)
-      ON CONFLICT DO NOTHING;
+        ('VIP Badge', 'Show off your VIP status on your profile', 1000, 'badge', 'vip', NULL, 1, '👑', 60, true),
+        ('Founder Badge', 'Limited edition badge for early supporters', 2000, 'badge', 'vip', NULL, 1, '🏆', 61, true),
+        ('Pro Member (30 days)', 'All premium features for 30 days', 1500, 'subscription', 'vip', 30, NULL, '⭐', 62, true)
+      ON CONFLICT (name) DO UPDATE SET 
+        description = EXCLUDED.description,
+        credits_cost = EXCLUDED.credits_cost,
+        item_type = EXCLUDED.item_type,
+        category = EXCLUDED.category,
+        duration_days = EXCLUDED.duration_days,
+        max_per_user = EXCLUDED.max_per_user,
+        icon = EXCLUDED.icon,
+        sort_order = EXCLUDED.sort_order,
+        is_active = EXCLUDED.is_active;
     `);
 
     const count = await pool.query('SELECT COUNT(*) FROM store_items');
