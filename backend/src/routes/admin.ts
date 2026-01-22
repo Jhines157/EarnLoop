@@ -86,6 +86,41 @@ router.use(adminAuth);
 
 router.post('/run-migrations', async (req: Request, res: Response, next: NextFunction) => {
   try {
+    const results: string[] = [];
+
+    // User inventory table (for owned items and active boosts)
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS user_inventory (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+        item_id UUID REFERENCES store_items(id),
+        item_type VARCHAR(50) NOT NULL,
+        quantity INTEGER DEFAULT 1,
+        is_active BOOLEAN DEFAULT FALSE,
+        expires_at TIMESTAMP WITH TIME ZONE,
+        activated_at TIMESTAMP WITH TIME ZONE,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+        UNIQUE(user_id, item_id)
+      );
+    `);
+    results.push('user_inventory table');
+
+    // Add streak_savers column to streaks table
+    await pool.query(`
+      ALTER TABLE streaks 
+      ADD COLUMN IF NOT EXISTS streak_savers INTEGER DEFAULT 0;
+    `);
+    results.push('streak_savers column');
+
+    // Add gift card columns to redemptions table
+    await pool.query(`
+      ALTER TABLE redemptions 
+      ADD COLUMN IF NOT EXISTS delivery_email VARCHAR(255),
+      ADD COLUMN IF NOT EXISTS gift_card_code VARCHAR(255),
+      ADD COLUMN IF NOT EXISTS fulfilled_at TIMESTAMP WITH TIME ZONE;
+    `);
+    results.push('redemptions gift card columns');
+
     // IP Blacklist table
     await pool.query(`
       CREATE TABLE IF NOT EXISTS ip_blacklist (
@@ -98,6 +133,7 @@ router.post('/run-migrations', async (req: Request, res: Response, next: NextFun
         updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
       );
     `);
+    results.push('ip_blacklist table');
 
     // Audit logs table
     await pool.query(`
@@ -115,14 +151,31 @@ router.post('/run-migrations', async (req: Request, res: Response, next: NextFun
         created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
       );
     `);
+    results.push('audit_logs table');
+
+    // Giveaway entries table
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS giveaway_entries (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+        giveaway_id VARCHAR(100) NOT NULL,
+        entry_type VARCHAR(20) NOT NULL,
+        entries_count INTEGER DEFAULT 1,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+        UNIQUE(user_id, giveaway_id, entry_type)
+      );
+    `);
+    results.push('giveaway_entries table');
 
     // Indexes
     await pool.query(`
       CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON audit_logs (created_at DESC);
       CREATE INDEX IF NOT EXISTS idx_audit_logs_ip ON audit_logs (ip_address);
     `);
+    results.push('indexes');
 
-    res.json({ success: true, data: { message: 'Migrations completed successfully' } });
+    res.json({ success: true, data: { message: 'Migrations completed successfully', tables: results } });
   } catch (error) {
     next(error);
   }
