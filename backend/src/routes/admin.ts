@@ -503,6 +503,190 @@ router.post('/bulk-send-gift-cards', async (req: Request, res: Response, next: N
 });
 
 // ============================================
+// CREDIT ADJUSTMENTS
+// ============================================
+
+// Adjust user credits (add or subtract)
+router.post('/users/:id/adjust-credits', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { id } = req.params;
+    const { amount, reason } = req.body;
+
+    if (typeof amount !== 'number') {
+      return next(createError('Amount must be a number', 400, 'INVALID_AMOUNT'));
+    }
+
+    // Get current balance
+    const balanceResult = await pool.query(
+      'SELECT credits_balance FROM balances WHERE user_id = $1',
+      [id]
+    );
+
+    if (balanceResult.rows.length === 0) {
+      return next(createError('User balance not found', 404, 'BALANCE_NOT_FOUND'));
+    }
+
+    const currentBalance = balanceResult.rows[0].credits_balance;
+    const newBalance = currentBalance + amount;
+
+    if (newBalance < 0) {
+      return next(createError('Cannot reduce balance below 0', 400, 'INSUFFICIENT_BALANCE'));
+    }
+
+    // Update balance
+    await pool.query(
+      `UPDATE balances 
+       SET credits_balance = $1, 
+           lifetime_earned = lifetime_earned + GREATEST($2, 0),
+           updated_at = NOW() 
+       WHERE user_id = $3`,
+      [newBalance, amount, id]
+    );
+
+    res.json({
+      success: true,
+      data: {
+        previousBalance: currentBalance,
+        adjustment: amount,
+        newBalance,
+        reason: reason || 'Admin adjustment',
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Bulk adjust credits for all users
+router.post('/bulk-adjust-credits', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { amount, reason } = req.body;
+
+    if (typeof amount !== 'number' || amount <= 0) {
+      return next(createError('Amount must be a positive number', 400, 'INVALID_AMOUNT'));
+    }
+
+    // Get all users
+    const usersResult = await pool.query('SELECT id FROM users');
+    const results = [];
+
+    for (const user of usersResult.rows) {
+      try {
+        await pool.query(
+          `UPDATE balances 
+           SET credits_balance = credits_balance + $1, 
+               lifetime_earned = lifetime_earned + $1,
+               updated_at = NOW() 
+           WHERE user_id = $2`,
+          [amount, user.id]
+        );
+        results.push({ userId: user.id, success: true });
+      } catch (err: any) {
+        results.push({ userId: user.id, success: false, error: err.message });
+      }
+    }
+
+    res.json({
+      success: true,
+      data: {
+        total: usersResult.rows.length,
+        successful: results.filter(r => r.success).length,
+        failed: results.filter(r => !r.success).length,
+        amount,
+        reason: reason || 'Bulk admin adjustment',
+        results,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Send bulk apology/announcement email
+router.post('/bulk-send-email', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { subject, message, creditsToAdd } = req.body;
+
+    if (!subject || !message) {
+      return next(createError('Subject and message are required', 400, 'MISSING_FIELDS'));
+    }
+
+    if (!process.env.RESEND_API_KEY) {
+      return next(createError('Email not configured', 500, 'EMAIL_NOT_CONFIGURED'));
+    }
+
+    // Get all users
+    const usersResult = await pool.query('SELECT u.id, u.email FROM users u');
+    const results = [];
+
+    for (const user of usersResult.rows) {
+      try {
+        // Add credits if specified
+        if (creditsToAdd && creditsToAdd > 0) {
+          await pool.query(
+            `UPDATE balances 
+             SET credits_balance = credits_balance + $1, 
+                 lifetime_earned = lifetime_earned + $1,
+                 updated_at = NOW() 
+             WHERE user_id = $2`,
+            [creditsToAdd, user.id]
+          );
+        }
+
+        // Send email
+        await sendEmail(
+          user.email,
+          subject,
+          `
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+              <div style="background: linear-gradient(135deg, #F7931A 0%, #FF6B35 100%); padding: 30px; border-radius: 12px; text-align: center;">
+                <h1 style="color: white; margin: 0;">📢 Message from EarnLoop</h1>
+              </div>
+              
+              <div style="padding: 30px; background: #f9fafb; border-radius: 12px; margin-top: 20px;">
+                <div style="color: #4b5563; font-size: 16px; line-height: 1.6;">
+                  ${message.replace(/\n/g, '<br>')}
+                </div>
+                
+                ${creditsToAdd ? `
+                <div style="background: #10B981; color: white; padding: 15px; border-radius: 8px; margin-top: 20px; text-align: center;">
+                  <p style="margin: 0; font-size: 18px; font-weight: bold;">
+                    🎁 We've added ${creditsToAdd} credits to your account!
+                  </p>
+                </div>
+                ` : ''}
+                
+                <p style="color: #6b7280; margin-top: 20px;">
+                  Thank you for being part of EarnLoop!<br>
+                  - The EarnLoop Team
+                </p>
+              </div>
+            </div>
+          `
+        );
+
+        results.push({ userId: user.id, email: user.email, success: true });
+      } catch (err: any) {
+        results.push({ userId: user.id, email: user.email, success: false, error: err.message });
+      }
+    }
+
+    res.json({
+      success: true,
+      data: {
+        total: usersResult.rows.length,
+        successful: results.filter(r => r.success).length,
+        failed: results.filter(r => !r.success).length,
+        creditsAdded: creditsToAdd || 0,
+        results,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// ============================================
 // BAN/UNBAN USERS
 // ============================================
 
