@@ -2,7 +2,7 @@ import { Router, Request, Response, NextFunction } from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
-import nodemailer from 'nodemailer';
+import { Resend } from 'resend';
 import { v4 as uuidv4 } from 'uuid';
 import pool from '../db';
 import { authRateLimiter } from '../middleware/rateLimiter';
@@ -228,16 +228,20 @@ router.post('/change-password', authenticate, async (req: AuthRequest, res: Resp
 // PASSWORD RESET (User Self-Service)
 // ============================================
 
-// Create email transporter
-const createTransporter = () => {
-  return nodemailer.createTransport({
-    host: process.env.SMTP_HOST,
-    port: parseInt(process.env.SMTP_PORT || '587'),
-    secure: process.env.SMTP_SECURE === 'true',
-    auth: {
-      user: process.env.SMTP_USER,
-      pass: process.env.SMTP_PASS,
-    },
+// Helper function to send emails via Resend
+const sendEmail = async (to: string, subject: string, html: string) => {
+  if (!process.env.RESEND_API_KEY) {
+    console.log('RESEND_API_KEY not set, skipping email');
+    return;
+  }
+  
+  const resend = new Resend(process.env.RESEND_API_KEY);
+  
+  await resend.emails.send({
+    from: 'EarnLoop <noreply@earnloop.app>',
+    to,
+    subject,
+    html,
   });
 };
 
@@ -279,50 +283,43 @@ router.post('/forgot-password', async (req: Request, res: Response, next: NextFu
       DO UPDATE SET code_hash = $2, expires_at = $3, attempts = 0, created_at = NOW()
     `, [user.id, resetCodeHash, expiresAt]);
 
-    // Send email if SMTP is configured
-    if (process.env.SMTP_HOST) {
-      const transporter = createTransporter();
-      
-      await transporter.sendMail({
-        from: process.env.SMTP_FROM || 'EarnLoop <noreply@earnloop.app>',
-        to: user.email,
-        subject: 'Reset Your EarnLoop Password',
-        html: `
-          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-            <div style="background: linear-gradient(135deg, #4F46E5 0%, #7C3AED 100%); padding: 30px; border-radius: 12px; text-align: center;">
-              <h1 style="color: white; margin: 0;">🔐 Password Reset</h1>
-            </div>
-            
-            <div style="padding: 30px; background: #f9fafb; border-radius: 12px; margin-top: 20px;">
-              <p style="color: #4b5563; font-size: 16px;">
-                You requested to reset your password. Use this code in the app:
-              </p>
-              
-              <div style="background: white; border: 2px solid #4F46E5; border-radius: 8px; padding: 20px; margin: 20px 0; text-align: center;">
-                <p style="font-size: 36px; font-weight: bold; color: #4F46E5; letter-spacing: 8px; margin: 0;">
-                  ${resetCode}
-                </p>
-              </div>
-              
-              <p style="color: #6b7280; font-size: 14px;">
-                This code expires in 15 minutes. If you didn't request this, you can ignore this email.
-              </p>
-            </div>
-            
-            <div style="text-align: center; padding: 20px; color: #9ca3af;">
-              <p style="margin: 0;">- The EarnLoop Team</p>
-            </div>
+    // Send email via Resend
+    await sendEmail(
+      user.email,
+      'Reset Your EarnLoop Password',
+      `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+          <div style="background: linear-gradient(135deg, #F7931A 0%, #FF6B35 100%); padding: 30px; border-radius: 12px; text-align: center;">
+            <h1 style="color: white; margin: 0;">🔐 Password Reset</h1>
           </div>
-        `,
-      });
-    }
+          
+          <div style="padding: 30px; background: #f9fafb; border-radius: 12px; margin-top: 20px;">
+            <p style="color: #4b5563; font-size: 16px;">
+              You requested to reset your password. Use this code in the app:
+            </p>
+            
+            <div style="background: white; border: 2px solid #F7931A; border-radius: 8px; padding: 20px; margin: 20px 0; text-align: center;">
+              <p style="font-size: 36px; font-weight: bold; color: #F7931A; letter-spacing: 8px; margin: 0;">
+                ${resetCode}
+              </p>
+            </div>
+            
+            <p style="color: #6b7280; font-size: 14px;">
+              This code expires in 15 minutes. If you didn't request this, you can ignore this email.
+            </p>
+          </div>
+          
+          <div style="text-align: center; padding: 20px; color: #9ca3af;">
+            <p style="margin: 0;">- The EarnLoop Team</p>
+          </div>
+        </div>
+      `
+    );
 
     res.json({
       success: true,
       data: { 
         message: 'If an account exists, a reset code has been sent.',
-        // In dev mode, return the code for testing (remove in production!)
-        ...(process.env.NODE_ENV === 'development' && { devCode: resetCode }),
       },
     });
   } catch (error) {
