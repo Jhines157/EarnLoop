@@ -262,6 +262,21 @@ class ApiClient {
       body: JSON.stringify({ giveawayId, engagementType }),
     });
   }
+
+  // Password reset endpoints
+  async forgotPassword(email: string) {
+    return this.request<{ message: string }>('/auth/forgot-password', {
+      method: 'POST',
+      body: JSON.stringify({ email }),
+    });
+  }
+
+  async resetPassword(email: string, code: string, newPassword: string) {
+    return this.request<{ message: string }>('/auth/reset-password', {
+      method: 'POST',
+      body: JSON.stringify({ email, code, newPassword }),
+    });
+  }
 }
 
 // Log the API URL on initialization for debugging

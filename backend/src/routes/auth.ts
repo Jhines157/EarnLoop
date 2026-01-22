@@ -231,18 +231,26 @@ router.post('/change-password', authenticate, async (req: AuthRequest, res: Resp
 // Helper function to send emails via Resend
 const sendEmail = async (to: string, subject: string, html: string) => {
   if (!process.env.RESEND_API_KEY) {
-    console.log('RESEND_API_KEY not set, skipping email');
-    return;
+    console.error('RESEND_API_KEY not set - cannot send email');
+    throw new Error('Email service not configured');
   }
   
   const resend = new Resend(process.env.RESEND_API_KEY);
   
-  await resend.emails.send({
+  const result = await resend.emails.send({
     from: 'EarnLoop <noreply@earnloop.app>',
     to,
     subject,
     html,
   });
+  
+  if (result.error) {
+    console.error('Resend error:', result.error);
+    throw new Error(result.error.message || 'Failed to send email');
+  }
+  
+  console.log('Email sent successfully to:', to);
+  return result;
 };
 
 // Request password reset - sends email with 6-digit code

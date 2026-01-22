@@ -35,11 +35,15 @@ export default function ForgotPasswordScreen({ navigation }: any) {
 
     setLoading(true);
     try {
-      await api.post('/auth/forgot-password', { email: email.trim().toLowerCase() });
-      setStep('code');
-      Alert.alert('Code Sent', 'If an account exists with this email, you will receive a reset code.');
+      const response = await api.forgotPassword(email.trim().toLowerCase());
+      if (response.success) {
+        setStep('code');
+        Alert.alert('Code Sent', 'If an account exists with this email, you will receive a reset code.');
+      } else {
+        Alert.alert('Error', response.error?.message || 'Failed to send reset code');
+      }
     } catch (error: any) {
-      Alert.alert('Error', error.response?.data?.error?.message || 'Failed to send reset code');
+      Alert.alert('Error', error.message || 'Failed to send reset code');
     } finally {
       setLoading(false);
     }
@@ -63,14 +67,18 @@ export default function ForgotPasswordScreen({ navigation }: any) {
 
     setLoading(true);
     try {
-      await api.post('/auth/reset-password', {
-        email: email.trim().toLowerCase(),
-        code: code.trim(),
-        newPassword,
-      });
-      setStep('success');
+      const response = await api.resetPassword(
+        email.trim().toLowerCase(),
+        code.trim(),
+        newPassword
+      );
+      if (response.success) {
+        setStep('success');
+      } else {
+        Alert.alert('Error', response.error?.message || 'Failed to reset password');
+      }
     } catch (error: any) {
-      Alert.alert('Error', error.response?.data?.error?.message || 'Failed to reset password');
+      Alert.alert('Error', error.message || 'Failed to reset password');
     } finally {
       setLoading(false);
     }
