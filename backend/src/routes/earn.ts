@@ -143,10 +143,18 @@ const getUserLevelBonus = async (userId: string): Promise<{ levelId: string; bon
   // Find highest level user qualifies for
   for (let i = LEVEL_CONFIG.length - 1; i >= 0; i--) {
     if (lifetimeEarned >= LEVEL_CONFIG[i].minCredits) {
-      return LEVEL_CONFIG[i];
+      return {
+        levelId: LEVEL_CONFIG[i].id,
+        bonusPercent: LEVEL_CONFIG[i].bonusPercent,
+        extraTokens: LEVEL_CONFIG[i].extraTokens,
+      };
     }
   }
-  return LEVEL_CONFIG[0];
+  return {
+    levelId: LEVEL_CONFIG[0].id,
+    bonusPercent: LEVEL_CONFIG[0].bonusPercent,
+    extraTokens: LEVEL_CONFIG[0].extraTokens,
+  };
 };
 
 // Apply level bonus to credits
