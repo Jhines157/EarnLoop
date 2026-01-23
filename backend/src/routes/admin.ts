@@ -300,7 +300,7 @@ router.post('/seed-store', async (req: Request, res: Response, next: NextFunctio
 // Get all users with optional filters
 router.get('/users', async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { days, search, limit = 50, offset = 0 } = req.query;
+    const { days, search, limit = 10000, offset = 0 } = req.query;
     
     let query = `
       SELECT 
