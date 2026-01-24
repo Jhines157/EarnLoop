@@ -277,6 +277,23 @@ class ApiClient {
       body: JSON.stringify({ email, code, newPassword }),
     });
   }
+
+  // Token spending endpoints
+  async spendTokens(action: 'jackpot_spin' | 'mystery_bag', tokensSpent: number, itemId?: string) {
+    return this.request<{
+      action: string;
+      tokensSpent: number;
+      tokensWon: number;
+      creditsWon: number;
+      multiplier: number;
+      message: string;
+      newTokenBalance: number;
+      newCreditsBalance: number;
+    }>('/store/spend-tokens', {
+      method: 'POST',
+      body: JSON.stringify({ action, tokensSpent, itemId }),
+    });
+  }
 }
 
 // Log the API URL on initialization for debugging

@@ -99,54 +99,49 @@ const RaffleScreen = () => {
     // Simulate spin animation delay
     await new Promise(resolve => setTimeout(resolve, 2000));
     
-    // Check for jackpot first
-    const jackpotRoll = Math.random() * 100;
-    if (jackpotRoll < JACKPOT_CONFIG.jackpotChance) {
+    // Call the backend API to spend tokens and get result
+    const response = await api.spendTokens('jackpot_spin', jackpotBet);
+    
+    if (!response.success || !response.data) {
+      setIsSpinning(false);
+      Alert.alert('Error', response.error?.message || 'Failed to spin. Please try again.');
+      return;
+    }
+    
+    const { multiplier, tokensWon, message, newTokenBalance } = response.data;
+    
+    // Update local state with server values
+    updateTokens(newTokenBalance);
+    
+    if (multiplier === 10) {
       // JACKPOT WIN!
-      const winnings = jackpotPool;
-      setLastResult({ multiplier: -1, winnings }); // -1 indicates jackpot
-      updateTokens(currentTokens - jackpotBet + winnings);
+      setLastResult({ multiplier: -1, winnings: tokensWon });
       setJackpotPool(JACKPOT_CONFIG.jackpotPool); // Reset pool
       setIsSpinning(false);
-      Alert.alert('🎰 JACKPOT!!! 🎰', `YOU WON THE JACKPOT!\n\n+${winnings.toLocaleString()} TOKENS!`, [
+      Alert.alert('🎰 JACKPOT!!! 🎰', `YOU WON THE JACKPOT!\n\n+${tokensWon.toLocaleString()} TOKENS!`, [
         { text: 'Amazing!', style: 'default' }
       ]);
       return;
     }
     
-    // Regular spin - pick multiplier based on weights
-    const roll = Math.random() * 100;
-    let cumulative = 0;
-    let selectedMultiplier = 0;
+    const netChange = tokensWon - jackpotBet;
     
-    for (let i = 0; i < JACKPOT_CONFIG.multipliers.length; i++) {
-      cumulative += JACKPOT_CONFIG.multiplierWeights[i];
-      if (roll < cumulative) {
-        selectedMultiplier = JACKPOT_CONFIG.multipliers[i];
-        break;
-      }
-    }
-    
-    const winnings = Math.floor(jackpotBet * selectedMultiplier);
-    const netChange = winnings - jackpotBet;
-    
-    // Add losses to jackpot pool
+    // Add losses to jackpot pool (visual only)
     if (netChange < 0) {
       setJackpotPool(prev => prev + Math.abs(netChange));
     }
     
-    setLastResult({ multiplier: selectedMultiplier, winnings });
-    updateTokens(currentTokens + netChange);
+    setLastResult({ multiplier, winnings: tokensWon });
     setIsSpinning(false);
     
-    if (selectedMultiplier === 0) {
+    if (multiplier === 0) {
       Alert.alert('💔 No Luck', `You lost ${jackpotBet} tokens. Better luck next time!`);
-    } else if (selectedMultiplier < 1) {
-      Alert.alert('😅 Partial Return', `You got ${winnings} tokens back (${selectedMultiplier}x)`);
-    } else if (selectedMultiplier === 1) {
+    } else if (multiplier < 1) {
+      Alert.alert('😅 Partial Return', `You got ${tokensWon} tokens back (${multiplier}x)`);
+    } else if (multiplier === 1) {
       Alert.alert('😌 Break Even', `You got your ${jackpotBet} tokens back!`);
     } else {
-      Alert.alert(`🎉 ${selectedMultiplier}x WIN!`, `You won ${winnings} tokens! (+${netChange} profit)`);
+      Alert.alert(`🎉 ${multiplier}x WIN!`, `You won ${tokensWon} tokens! (+${netChange} profit)`);
     }
   };
 
@@ -550,16 +545,23 @@ const RaffleScreen = () => {
                     { text: 'Cancel', style: 'cancel' },
                     { 
                       text: 'Buy', 
-                      onPress: () => {
-                        updateTokens((balance.tokens || 0) - item.tokenCost);
+                      onPress: async () => {
                         if (item.category === 'mystery_bag') {
-                          // Random credits from mystery bag
-                          const minCredits = item.id.includes('small') ? 50 : item.id.includes('medium') ? 100 : 250;
-                          const maxCredits = item.id.includes('small') ? 200 : item.id.includes('medium') ? 500 : 1000;
-                          const wonCredits = Math.floor(Math.random() * (maxCredits - minCredits + 1)) + minCredits;
-                          updateBalance(balance.current + wonCredits);
-                          Alert.alert('🎁 Mystery Bag Opened!', `You won ${wonCredits} credits!`);
+                          // Call backend API to spend tokens and get mystery bag result
+                          const response = await api.spendTokens('mystery_bag', item.tokenCost, item.id);
+                          
+                          if (!response.success || !response.data) {
+                            Alert.alert('Error', response.error?.message || 'Failed to purchase. Please try again.');
+                            return;
+                          }
+                          
+                          const { creditsWon, newTokenBalance, newCreditsBalance } = response.data;
+                          updateTokens(newTokenBalance);
+                          updateBalance(newCreditsBalance);
+                          Alert.alert('🎁 Mystery Bag Opened!', `You won ${creditsWon} credits!`);
                         } else {
+                          // For non-mystery bag items, just deduct tokens locally (or implement API if needed)
+                          updateTokens((balance.tokens || 0) - item.tokenCost);
                           Alert.alert('✅ Purchased!', `${item.name} has been added to your account!`);
                         }
                       }
