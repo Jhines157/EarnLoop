@@ -398,6 +398,133 @@ router.get('/history', async (req: AuthRequest, res: Response, next: NextFunctio
   }
 });
 
+// Spend tokens (jackpot spin or mystery bag purchase)
+router.post('/spend-tokens', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const userId = req.userId!;
+    const { action, tokensSpent, itemId } = req.body;
+
+    if (!action || !tokensSpent) {
+      return next(createError('Action and tokensSpent required', 400, 'MISSING_PARAMS'));
+    }
+
+    if (tokensSpent <= 0) {
+      return next(createError('Invalid token amount', 400, 'INVALID_AMOUNT'));
+    }
+
+    // Get current token balance
+    const balanceResult = await pool.query(
+      'SELECT tokens, credits_balance FROM balances WHERE user_id = $1',
+      [userId]
+    );
+    
+    const currentTokens = balanceResult.rows[0]?.tokens || 0;
+    const currentCredits = balanceResult.rows[0]?.credits_balance || 0;
+
+    if (currentTokens < tokensSpent) {
+      return next(createError('Insufficient tokens', 400, 'INSUFFICIENT_TOKENS'));
+    }
+
+    let creditsWon = 0;
+    let tokensWon = 0;
+    let resultMessage = '';
+    let multiplier = 0;
+
+    if (action === 'jackpot_spin') {
+      // Jackpot configuration
+      const JACKPOT_MULTIPLIERS = [0, 0.25, 0.5, 1, 1.5, 2, 3, 5];
+      const JACKPOT_WEIGHTS = [40, 20, 15, 12, 8, 3, 1.5, 0.5]; // 40% lose, etc.
+      const JACKPOT_CHANCE = 0.01; // 0.01% jackpot chance
+      
+      // Check for jackpot first
+      const jackpotRoll = Math.random() * 100;
+      if (jackpotRoll < JACKPOT_CHANCE) {
+        // Jackpot win - award 10x tokens
+        tokensWon = tokensSpent * 10;
+        multiplier = 10;
+        resultMessage = 'JACKPOT!';
+      } else {
+        // Regular spin
+        const roll = Math.random() * 100;
+        let cumulative = 0;
+        
+        for (let i = 0; i < JACKPOT_MULTIPLIERS.length; i++) {
+          cumulative += JACKPOT_WEIGHTS[i];
+          if (roll < cumulative) {
+            multiplier = JACKPOT_MULTIPLIERS[i];
+            break;
+          }
+        }
+        
+        tokensWon = Math.floor(tokensSpent * multiplier);
+        resultMessage = multiplier === 0 ? 'No luck!' : 
+                       multiplier < 1 ? 'Partial return' :
+                       multiplier === 1 ? 'Break even' : `${multiplier}x WIN!`;
+      }
+
+      // Net token change: what they won minus what they spent
+      const netTokenChange = tokensWon - tokensSpent;
+      
+      // Update token balance
+      await pool.query(
+        `UPDATE balances 
+         SET tokens = tokens + $1,
+             updated_at = NOW()
+         WHERE user_id = $2`,
+        [netTokenChange, userId]
+      );
+
+    } else if (action === 'mystery_bag') {
+      // Mystery bag - spend tokens, win random credits
+      const bagConfig: Record<string, { min: number; max: number }> = {
+        'mystery_bag_small': { min: 50, max: 200 },
+        'mystery_bag_medium': { min: 100, max: 500 },
+        'mystery_bag_large': { min: 250, max: 1000 },
+      };
+
+      const config = bagConfig[itemId] || { min: 50, max: 200 };
+      creditsWon = Math.floor(Math.random() * (config.max - config.min + 1)) + config.min;
+      resultMessage = `Won ${creditsWon} credits!`;
+
+      // Deduct tokens and add credits
+      await pool.query(
+        `UPDATE balances 
+         SET tokens = tokens - $1,
+             credits_balance = credits_balance + $2,
+             lifetime_earned = lifetime_earned + $2,
+             updated_at = NOW()
+         WHERE user_id = $3`,
+        [tokensSpent, creditsWon, userId]
+      );
+
+    } else {
+      return next(createError('Invalid action', 400, 'INVALID_ACTION'));
+    }
+
+    // Get updated balances
+    const newBalanceResult = await pool.query(
+      'SELECT tokens, credits_balance FROM balances WHERE user_id = $1',
+      [userId]
+    );
+
+    res.json({
+      success: true,
+      data: {
+        action,
+        tokensSpent,
+        tokensWon,
+        creditsWon,
+        multiplier,
+        message: resultMessage,
+        newTokenBalance: newBalanceResult.rows[0]?.tokens || 0,
+        newCreditsBalance: newBalanceResult.rows[0]?.credits_balance || 0,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 // Legacy endpoint for backwards compatibility
 router.get('/my-rewards', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
