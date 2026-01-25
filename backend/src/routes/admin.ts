@@ -81,6 +81,93 @@ router.use(adminRateLimiter);
 router.use(adminAuth);
 
 // ============================================
+// TEST EMAIL ENDPOINT
+// ============================================
+
+router.post('/test-gift-card-email', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { email, giftCardCode = 'TEST-1234-ABCD-5678', giftCardValue = '5', giftCardType = 'Amazon' } = req.body;
+
+    if (!email) {
+      return next(createError('Email is required', 400, 'MISSING_EMAIL'));
+    }
+
+    if (!process.env.RESEND_API_KEY) {
+      return next(createError('RESEND_API_KEY not configured', 500, 'EMAIL_NOT_CONFIGURED'));
+    }
+
+    const itemName = `$${giftCardValue} ${giftCardType} Gift Card`;
+
+    await sendEmail(
+      email,
+      `🎉 Your ${giftCardType} Gift Card from EarnLoop!`,
+      `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+          <div style="background: linear-gradient(135deg, #4F46E5 0%, #7C3AED 100%); padding: 30px; border-radius: 12px; text-align: center;">
+            <h1 style="color: white; margin: 0;">🎁 You've Got a Gift Card!</h1>
+          </div>
+          
+          <div style="padding: 30px; background: #f9fafb; border-radius: 12px; margin-top: 20px;">
+            <h2 style="color: #1f2937; margin-top: 0;">Congratulations!</h2>
+            <p style="color: #4b5563; font-size: 16px;">
+              Thank you for being an amazing EarnLoop user! Here's your reward:
+            </p>
+            
+            <div style="background: white; border: 2px dashed #4F46E5; border-radius: 8px; padding: 20px; margin: 20px 0; text-align: center;">
+              <p style="color: #6b7280; margin: 0 0 10px 0;">${itemName}</p>
+              <p style="font-size: 28px; font-weight: bold; color: #4F46E5; margin: 0 0 10px 0;">$${giftCardValue}</p>
+              <p style="font-family: monospace; font-size: 18px; background: #f3f4f6; padding: 10px; border-radius: 4px; color: #1f2937;">
+                ${giftCardCode}
+              </p>
+            </div>
+            
+            <p style="color: #6b7280; font-size: 14px;">
+              To redeem, visit ${giftCardType.toLowerCase() === 'amazon' ? 'amazon.com/gc/redeem' : 
+                giftCardType.toLowerCase() === 'apple' ? 'apple.com/redeem' :
+                giftCardType.toLowerCase() === 'google' ? 'play.google.com/redeem' :
+                'the appropriate redemption page'} and enter the code above.
+            </p>
+          </div>
+          
+          <div style="background: #FEF3C7; border-radius: 12px; padding: 20px; margin-top: 20px; text-align: center;">
+            <p style="color: #92400E; font-size: 18px; font-weight: bold; margin: 0 0 10px 0;">
+              ⭐ Enjoying EarnLoop? ⭐
+            </p>
+            <p style="color: #B45309; font-size: 14px; margin: 0 0 15px 0;">
+              We'd love to hear from you! Your feedback helps us improve and helps other users discover EarnLoop.
+            </p>
+            <div style="display: inline-block;">
+              <a href="https://apps.apple.com/app/earnloop/id123456789" style="display: inline-block; background: #4F46E5; color: white; text-decoration: none; padding: 12px 24px; border-radius: 8px; font-weight: bold; margin: 5px;">
+                Rate on App Store 🍎
+              </a>
+              <a href="https://play.google.com/store/apps/details?id=com.earnloop.app" style="display: inline-block; background: #10B981; color: white; text-decoration: none; padding: 12px 24px; border-radius: 8px; font-weight: bold; margin: 5px;">
+                Rate on Google Play 🤖
+              </a>
+            </div>
+          </div>
+          
+          <div style="text-align: center; padding: 20px; color: #9ca3af;">
+            <p style="margin: 0;">Keep earning with EarnLoop! 🚀</p>
+          </div>
+        </div>
+      `
+    );
+
+    res.json({
+      success: true,
+      data: {
+        message: 'Test gift card email sent successfully',
+        email,
+        giftCardType,
+        giftCardValue,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// ============================================
 // DATABASE MIGRATIONS (run once)
 // ============================================
 
@@ -660,6 +747,300 @@ router.post('/bulk-send-gift-cards', async (req: Request, res: Response, next: N
         successful: results.filter(r => r.success).length,
         failed: results.filter(r => !r.success).length,
         results,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// ============================================
+// GIFT CARD REDEMPTIONS MANAGEMENT
+// ============================================
+
+// Get all gift card redemptions (pending, completed, etc.)
+router.get('/gift-card-redemptions', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { status } = req.query;
+    
+    let query = `
+      SELECT 
+        r.id,
+        r.user_id,
+        r.credits_spent,
+        r.status,
+        r.delivery_email,
+        r.gift_card_code,
+        r.fulfilled_at,
+        r.created_at,
+        u.email as user_email,
+        u.username,
+        si.name as item_name,
+        si.credits_cost,
+        si.icon
+      FROM redemptions r
+      JOIN users u ON r.user_id = u.id
+      JOIN store_items si ON r.item_id = si.id
+      WHERE si.item_type = 'giftcard'
+    `;
+    
+    const params: any[] = [];
+    
+    if (status) {
+      params.push(status);
+      query += ` AND r.status = $${params.length}`;
+    }
+    
+    query += ` ORDER BY r.created_at DESC`;
+    
+    const result = await pool.query(query, params);
+    
+    // Get summary counts
+    const summaryResult = await pool.query(`
+      SELECT 
+        r.status,
+        COUNT(*) as count
+      FROM redemptions r
+      JOIN store_items si ON r.item_id = si.id
+      WHERE si.item_type = 'giftcard'
+      GROUP BY r.status
+    `);
+    
+    const summary: Record<string, number> = {
+      pending: 0,
+      completed: 0,
+      failed: 0,
+    };
+    
+    summaryResult.rows.forEach(row => {
+      summary[row.status] = parseInt(row.count);
+    });
+
+    res.json({
+      success: true,
+      data: {
+        redemptions: result.rows,
+        summary,
+        total: result.rows.length,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Fulfill a gift card redemption (mark as completed and optionally send email)
+router.post('/gift-card-redemptions/:id/fulfill', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { id } = req.params;
+    const { giftCardCode, sendEmail: shouldSendEmail = true } = req.body;
+
+    if (!giftCardCode) {
+      return next(createError('Gift card code is required', 400, 'MISSING_CODE'));
+    }
+
+    // Get the redemption details
+    const redemptionResult = await pool.query(`
+      SELECT 
+        r.*,
+        u.email as user_email,
+        si.name as item_name,
+        si.credits_cost
+      FROM redemptions r
+      JOIN users u ON r.user_id = u.id
+      JOIN store_items si ON r.item_id = si.id
+      WHERE r.id = $1
+    `, [id]);
+
+    if (redemptionResult.rows.length === 0) {
+      return next(createError('Redemption not found', 404, 'REDEMPTION_NOT_FOUND'));
+    }
+
+    const redemption = redemptionResult.rows[0];
+
+    if (redemption.status === 'completed') {
+      return next(createError('This redemption has already been fulfilled', 400, 'ALREADY_FULFILLED'));
+    }
+
+    // Update redemption status
+    await pool.query(`
+      UPDATE redemptions 
+      SET status = 'completed', 
+          gift_card_code = $1,
+          fulfilled_at = NOW()
+      WHERE id = $2
+    `, [giftCardCode, id]);
+
+    // Extract gift card type and value from item name (e.g., "$5 Amazon Gift Card")
+    const match = redemption.item_name.match(/\$(\d+)\s+(\w+)/);
+    const giftCardValue = match ? match[1] : '5';
+    const giftCardType = match ? match[2] : 'Gift Card';
+
+    // Send email if requested
+    let emailSent = false;
+    const deliveryEmail = redemption.delivery_email || redemption.user_email;
+    
+    if (shouldSendEmail && process.env.RESEND_API_KEY) {
+      try {
+        await sendEmail(
+          deliveryEmail,
+          `🎉 Your ${giftCardType} Gift Card from EarnLoop!`,
+          `
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+              <div style="background: linear-gradient(135deg, #4F46E5 0%, #7C3AED 100%); padding: 30px; border-radius: 12px; text-align: center;">
+                <h1 style="color: white; margin: 0;">🎁 You've Got a Gift Card!</h1>
+              </div>
+              
+              <div style="padding: 30px; background: #f9fafb; border-radius: 12px; margin-top: 20px;">
+                <h2 style="color: #1f2937; margin-top: 0;">Congratulations!</h2>
+                <p style="color: #4b5563; font-size: 16px;">
+                  Thank you for being an amazing EarnLoop user! Here's your reward:
+                </p>
+                
+                <div style="background: white; border: 2px dashed #4F46E5; border-radius: 8px; padding: 20px; margin: 20px 0; text-align: center;">
+                  <p style="color: #6b7280; margin: 0 0 10px 0;">${redemption.item_name}</p>
+                  <p style="font-size: 28px; font-weight: bold; color: #4F46E5; margin: 0 0 10px 0;">$${giftCardValue}</p>
+                  <p style="font-family: monospace; font-size: 18px; background: #f3f4f6; padding: 10px; border-radius: 4px; color: #1f2937;">
+                    ${giftCardCode}
+                  </p>
+                </div>
+                
+                <p style="color: #6b7280; font-size: 14px;">
+                  To redeem, visit ${giftCardType.toLowerCase() === 'amazon' ? 'amazon.com/gc/redeem' : 
+                    giftCardType.toLowerCase() === 'apple' ? 'apple.com/redeem' :
+                    giftCardType.toLowerCase() === 'google' ? 'play.google.com/redeem' :
+                    'the appropriate redemption page'} and enter the code above.
+                </p>
+              </div>
+              
+              <div style="background: #FEF3C7; border-radius: 12px; padding: 20px; margin-top: 20px; text-align: center;">
+                <p style="color: #92400E; font-size: 18px; font-weight: bold; margin: 0 0 10px 0;">
+                  ⭐ Enjoying EarnLoop? ⭐
+                </p>
+                <p style="color: #B45309; font-size: 14px; margin: 0 0 15px 0;">
+                  We'd love to hear from you! Your feedback helps us improve and helps other users discover EarnLoop.
+                </p>
+                <div style="display: inline-block;">
+                  <a href="https://apps.apple.com/app/earnloop/id123456789" style="display: inline-block; background: #4F46E5; color: white; text-decoration: none; padding: 12px 24px; border-radius: 8px; font-weight: bold; margin: 5px;">
+                    Rate on App Store 🍎
+                  </a>
+                  <a href="https://play.google.com/store/apps/details?id=com.earnloop.app" style="display: inline-block; background: #10B981; color: white; text-decoration: none; padding: 12px 24px; border-radius: 8px; font-weight: bold; margin: 5px;">
+                    Rate on Google Play 🤖
+                  </a>
+                </div>
+              </div>
+              
+              <div style="text-align: center; padding: 20px; color: #9ca3af;">
+                <p style="margin: 0;">Keep earning with EarnLoop! 🚀</p>
+              </div>
+            </div>
+          `
+        );
+        emailSent = true;
+      } catch (emailError) {
+        console.error('Failed to send gift card email:', emailError);
+      }
+    }
+
+    // Log the fulfillment
+    await pool.query(`
+      INSERT INTO admin_logs (action, admin_note, user_id, metadata)
+      VALUES ($1, $2, $3, $4)
+    `, [
+      'gift_card_fulfilled',
+      `Fulfilled ${redemption.item_name}`,
+      redemption.user_id,
+      JSON.stringify({ 
+        redemptionId: id,
+        itemName: redemption.item_name,
+        giftCardCode: giftCardCode.substring(0, 4) + '****',
+        emailSent,
+        deliveryEmail,
+      })
+    ]);
+
+    res.json({
+      success: true,
+      data: {
+        message: 'Gift card redemption fulfilled successfully',
+        redemptionId: id,
+        itemName: redemption.item_name,
+        deliveryEmail,
+        emailSent,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Mark a gift card redemption as failed/cancelled
+router.post('/gift-card-redemptions/:id/cancel', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { id } = req.params;
+    const { reason, refundCredits = true } = req.body;
+
+    // Get the redemption details
+    const redemptionResult = await pool.query(`
+      SELECT r.*, si.name as item_name
+      FROM redemptions r
+      JOIN store_items si ON r.item_id = si.id
+      WHERE r.id = $1
+    `, [id]);
+
+    if (redemptionResult.rows.length === 0) {
+      return next(createError('Redemption not found', 404, 'REDEMPTION_NOT_FOUND'));
+    }
+
+    const redemption = redemptionResult.rows[0];
+
+    if (redemption.status === 'completed') {
+      return next(createError('Cannot cancel a completed redemption', 400, 'ALREADY_COMPLETED'));
+    }
+
+    // Update status to failed
+    await pool.query(`
+      UPDATE redemptions 
+      SET status = 'failed'
+      WHERE id = $1
+    `, [id]);
+
+    // Refund credits if requested
+    if (refundCredits) {
+      await pool.query(`
+        UPDATE balances 
+        SET credits_balance = credits_balance + $1,
+            lifetime_spent = lifetime_spent - $1,
+            updated_at = NOW()
+        WHERE user_id = $2
+      `, [redemption.credits_spent, redemption.user_id]);
+    }
+
+    // Log the cancellation
+    await pool.query(`
+      INSERT INTO admin_logs (action, admin_note, user_id, metadata)
+      VALUES ($1, $2, $3, $4)
+    `, [
+      'gift_card_cancelled',
+      `Cancelled ${redemption.item_name}: ${reason || 'No reason provided'}`,
+      redemption.user_id,
+      JSON.stringify({ 
+        redemptionId: id,
+        itemName: redemption.item_name,
+        refunded: refundCredits,
+        creditsRefunded: refundCredits ? redemption.credits_spent : 0,
+        reason,
+      })
+    ]);
+
+    res.json({
+      success: true,
+      data: {
+        message: refundCredits 
+          ? `Redemption cancelled and ${redemption.credits_spent} credits refunded`
+          : 'Redemption cancelled (no refund)',
+        redemptionId: id,
+        creditsRefunded: refundCredits ? redemption.credits_spent : 0,
       },
     });
   } catch (error) {
