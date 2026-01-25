@@ -136,14 +136,9 @@ router.post('/test-gift-card-email', async (req: Request, res: Response, next: N
             <p style="color: #B45309; font-size: 14px; margin: 0 0 15px 0;">
               We'd love to hear from you! Your feedback helps us improve and helps other users discover EarnLoop.
             </p>
-            <div style="display: inline-block;">
-              <a href="https://apps.apple.com/app/earnloop/id123456789" style="display: inline-block; background: #4F46E5; color: white; text-decoration: none; padding: 12px 24px; border-radius: 8px; font-weight: bold; margin: 5px;">
-                Rate on App Store 🍎
-              </a>
-              <a href="https://play.google.com/store/apps/details?id=com.earnloop.app" style="display: inline-block; background: #10B981; color: white; text-decoration: none; padding: 12px 24px; border-radius: 8px; font-weight: bold; margin: 5px;">
-                Rate on Google Play 🤖
-              </a>
-            </div>
+            <a href="https://apps.apple.com/app/earnloop/id6757683754" style="display: inline-block; background: #4F46E5; color: white; text-decoration: none; padding: 12px 24px; border-radius: 8px; font-weight: bold;">
+              Rate on App Store ⭐
+            </a>
           </div>
           
           <div style="text-align: center; padding: 20px; color: #9ca3af;">
@@ -920,14 +915,9 @@ router.post('/gift-card-redemptions/:id/fulfill', async (req: Request, res: Resp
                 <p style="color: #B45309; font-size: 14px; margin: 0 0 15px 0;">
                   We'd love to hear from you! Your feedback helps us improve and helps other users discover EarnLoop.
                 </p>
-                <div style="display: inline-block;">
-                  <a href="https://apps.apple.com/app/earnloop/id123456789" style="display: inline-block; background: #4F46E5; color: white; text-decoration: none; padding: 12px 24px; border-radius: 8px; font-weight: bold; margin: 5px;">
-                    Rate on App Store 🍎
-                  </a>
-                  <a href="https://play.google.com/store/apps/details?id=com.earnloop.app" style="display: inline-block; background: #10B981; color: white; text-decoration: none; padding: 12px 24px; border-radius: 8px; font-weight: bold; margin: 5px;">
-                    Rate on Google Play 🤖
-                  </a>
-                </div>
+                <a href="https://apps.apple.com/app/earnloop/id6757683754" style="display: inline-block; background: #4F46E5; color: white; text-decoration: none; padding: 12px 24px; border-radius: 8px; font-weight: bold;">
+                  Rate on App Store ⭐
+                </a>
               </div>
               
               <div style="text-align: center; padding: 20px; color: #9ca3af;">
