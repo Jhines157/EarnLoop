@@ -769,7 +769,6 @@ router.get('/gift-card-redemptions', async (req: Request, res: Response, next: N
         r.fulfilled_at,
         r.created_at,
         u.email as user_email,
-        u.username,
         si.name as item_name,
         si.credits_cost,
         si.icon
