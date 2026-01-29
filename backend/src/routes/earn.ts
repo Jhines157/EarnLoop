@@ -571,7 +571,7 @@ const STEP_CONFIG = {
 // GET /earn/step-data - Get user's step data and streak
 router.get('/step-data', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
-    const userId = req.user!.id;
+    const userId = req.userId!;
 
     // Get today's step conversions
     const todayConversions = await pool.query(
@@ -615,11 +615,11 @@ router.get('/step-data', async (req: AuthRequest, res: Response, next: NextFunct
 // POST /earn/convert-steps - Convert steps to credits
 router.post('/convert-steps', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
-    const userId = req.user!.id;
+    const userId = req.userId!;
     const { stepsToConvert } = req.body;
 
     if (!stepsToConvert || stepsToConvert < STEP_CONFIG.STEPS_PER_AD) {
-      return next(createError('Not enough steps to convert', 'INSUFFICIENT_STEPS', 400));
+      return next(createError('Not enough steps to convert', 400, 'INSUFFICIENT_STEPS'));
     }
 
     // Check daily limit
@@ -631,7 +631,7 @@ router.post('/convert-steps', async (req: AuthRequest, res: Response, next: Next
 
     const adsConvertedToday = parseInt(todayConversions.rows[0].count);
     if (adsConvertedToday >= STEP_CONFIG.MAX_DAILY_ADS) {
-      return next(createError('Daily step conversion limit reached', 'DAILY_LIMIT_REACHED', 400));
+      return next(createError('Daily step conversion limit reached', 400, 'DAILY_LIMIT_REACHED'));
     }
 
     // Credit the user
