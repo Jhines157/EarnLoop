@@ -557,4 +557,164 @@ router.get('/status', async (req: AuthRequest, res: Response, next: NextFunction
   }
 });
 
+// ============================================
+// Step tracking endpoints
+// ============================================
+
+const STEP_CONFIG = {
+  STEPS_PER_AD: 1000,
+  CREDITS_PER_AD: 10,
+  MAX_DAILY_STEPS: 30000,
+  MAX_DAILY_ADS: 30,
+};
+
+// GET /earn/step-data - Get user's step data and streak
+router.get('/step-data', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const userId = req.user!.id;
+
+    // Get today's step conversions
+    const todayConversions = await pool.query(
+      `SELECT COALESCE(SUM(steps_converted), 0) as steps, 
+              COUNT(*) as ads_count,
+              COALESCE(SUM(credits_earned), 0) as credits
+       FROM step_conversions 
+       WHERE user_id = $1 AND created_at >= CURRENT_DATE`,
+      [userId]
+    );
+
+    // Get step streak from streaks table
+    const streakResult = await pool.query(
+      `SELECT step_streak, longest_step_streak, last_step_conversion 
+       FROM streaks 
+       WHERE user_id = $1`,
+      [userId]
+    );
+
+    const stepStreak = streakResult.rows[0]?.step_streak || 0;
+    const longestStreak = streakResult.rows[0]?.longest_step_streak || 0;
+    const lastStepDate = streakResult.rows[0]?.last_step_conversion || null;
+
+    res.json({
+      success: true,
+      data: {
+        todaySteps: 0, // Client gets this from HealthKit
+        stepsConverted: parseInt(todayConversions.rows[0].steps),
+        adsWatchedFromSteps: parseInt(todayConversions.rows[0].ads_count),
+        creditsEarnedFromSteps: parseInt(todayConversions.rows[0].credits),
+        currentStreak: stepStreak,
+        longestStreak: longestStreak,
+        lastStepDate: lastStepDate,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// POST /earn/convert-steps - Convert steps to credits
+router.post('/convert-steps', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const userId = req.user!.id;
+    const { stepsToConvert } = req.body;
+
+    if (!stepsToConvert || stepsToConvert < STEP_CONFIG.STEPS_PER_AD) {
+      return next(createError('Not enough steps to convert', 'INSUFFICIENT_STEPS', 400));
+    }
+
+    // Check daily limit
+    const todayConversions = await pool.query(
+      `SELECT COUNT(*) as count FROM step_conversions 
+       WHERE user_id = $1 AND created_at >= CURRENT_DATE`,
+      [userId]
+    );
+
+    const adsConvertedToday = parseInt(todayConversions.rows[0].count);
+    if (adsConvertedToday >= STEP_CONFIG.MAX_DAILY_ADS) {
+      return next(createError('Daily step conversion limit reached', 'DAILY_LIMIT_REACHED', 400));
+    }
+
+    // Credit the user
+    const creditsEarned = STEP_CONFIG.CREDITS_PER_AD;
+
+    // Record the conversion
+    await pool.query(
+      `INSERT INTO step_conversions (user_id, steps_converted, credits_earned)
+       VALUES ($1, $2, $3)`,
+      [userId, STEP_CONFIG.STEPS_PER_AD, creditsEarned]
+    );
+
+    // Update balance
+    await pool.query(
+      `UPDATE balances 
+       SET current_balance = current_balance + $1, 
+           lifetime_earned = lifetime_earned + $1 
+       WHERE user_id = $2`,
+      [creditsEarned, userId]
+    );
+
+    // Update streak in streaks table
+    const lastConversion = await pool.query(
+      `SELECT last_step_conversion, step_streak, longest_step_streak 
+       FROM streaks WHERE user_id = $1`,
+      [userId]
+    );
+
+    let newStreak = 1;
+    let longestStreak = 1;
+    
+    if (lastConversion.rows.length > 0) {
+      const lastDate = lastConversion.rows[0].last_step_conversion;
+      const currentStreak = lastConversion.rows[0].step_streak || 0;
+      longestStreak = lastConversion.rows[0].longest_step_streak || 0;
+      
+      if (lastDate) {
+        const yesterday = new Date();
+        yesterday.setDate(yesterday.getDate() - 1);
+        const lastDateStr = new Date(lastDate).toISOString().split('T')[0];
+        const yesterdayStr = yesterday.toISOString().split('T')[0];
+        const todayStr = new Date().toISOString().split('T')[0];
+        
+        if (lastDateStr === yesterdayStr) {
+          // Continue streak
+          newStreak = currentStreak + 1;
+        } else if (lastDateStr === todayStr) {
+          // Already converted today, keep streak
+          newStreak = currentStreak;
+        }
+      }
+      
+      longestStreak = Math.max(longestStreak, newStreak);
+    }
+
+    // Update streaks table
+    await pool.query(
+      `UPDATE streaks SET
+         step_streak = $2,
+         longest_step_streak = GREATEST(COALESCE(longest_step_streak, 0), $3),
+         last_step_conversion = CURRENT_DATE
+       WHERE user_id = $1`,
+      [userId, newStreak, longestStreak]
+    );
+
+    // Get new balance
+    const balanceResult = await pool.query(
+      'SELECT current_balance FROM balances WHERE user_id = $1',
+      [userId]
+    );
+
+    res.json({
+      success: true,
+      data: {
+        stepsConverted: STEP_CONFIG.STEPS_PER_AD,
+        creditsEarned,
+        newBalance: parseInt(balanceResult.rows[0]?.current_balance || 0),
+        adsConvertedToday: adsConvertedToday + 1,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 export default router;

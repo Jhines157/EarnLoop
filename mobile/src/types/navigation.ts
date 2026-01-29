@@ -13,8 +13,9 @@ export type RootStackParamList = {
 export type MainTabParamList = {
   Home: undefined;
   Earn: undefined;
+  Steps: undefined;
   Rewards: undefined;
-  Wallet: undefined;
+  Raffles: undefined;
   Profile: undefined;
 };
 

@@ -294,6 +294,31 @@ class ApiClient {
       body: JSON.stringify({ action, tokensSpent, itemId }),
     });
   }
+
+  // Step tracking endpoints
+  async getStepData() {
+    return this.request<{
+      todaySteps: number;
+      stepsConverted: number;
+      adsWatchedFromSteps: number;
+      creditsEarnedFromSteps: number;
+      currentStreak: number;
+      longestStreak: number;
+      lastStepDate: string | null;
+    }>('/earn/step-data');
+  }
+
+  async convertSteps(stepsToConvert: number) {
+    return this.request<{
+      stepsConverted: number;
+      creditsEarned: number;
+      newBalance: number;
+      adsConvertedToday: number;
+    }>('/earn/convert-steps', {
+      method: 'POST',
+      body: JSON.stringify({ stepsToConvert }),
+    });
+  }
 }
 
 // Log the API URL on initialization for debugging

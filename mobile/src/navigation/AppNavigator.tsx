@@ -26,6 +26,7 @@ import { colors as staticColors } from '../utils/theme';
 // Screens
 import HomeScreen from '../screens/HomeScreen';
 import EarnScreen from '../screens/EarnScreen';
+import StepsScreen from '../screens/StepsScreen';
 import RewardsScreen from '../screens/RewardsScreen';
 import RaffleScreen from '../screens/RaffleScreen';
 import ProfileScreen from '../screens/ProfileScreen';
@@ -163,6 +164,7 @@ const TabIcon = ({ name, focused }: { name: string; focused: boolean }) => {
   const icons: Record<string, string> = {
     Home: '🏠',
     Earn: '💰',
+    Steps: '🚶',
     Rewards: '🎁',
     Raffles: '🎰',
     Profile: '👤',
@@ -214,6 +216,11 @@ const MainTabs = () => {
         name="Earn" 
         component={EarnScreen}
         options={{ title: 'Earn Credits' }}
+      />
+      <Tab.Screen 
+        name="Steps" 
+        component={StepsScreen}
+        options={{ title: 'Steps' }}
       />
       <Tab.Screen 
         name="Rewards" 

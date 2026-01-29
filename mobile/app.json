@@ -82,7 +82,13 @@
             "SKAdNetworkIdentifier": "3qy4746246.skadnetwork"
           }
         ],
-        "ITSAppUsesNonExemptEncryption": false
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSHealthShareUsageDescription": "EarnLoop needs access to your step count to convert your walking activity into rewards. Your health data is never shared.",
+        "NSHealthUpdateUsageDescription": "EarnLoop does not write any health data."
+      },
+      "entitlements": {
+        "com.apple.developer.healthkit": true,
+        "com.apple.developer.healthkit.access": []
       }
     },
     "android": {
@@ -105,6 +111,13 @@
         "expo-tracking-transparency",
         {
           "userTrackingPermission": "EarnLoop uses this permission to show you relevant ads and improve your experience. You can still use the app without allowing tracking."
+        }
+      ],
+      [
+        "react-native-health",
+        {
+          "healthSharePermission": "EarnLoop needs access to your step count to convert your walking activity into rewards.",
+          "healthUpdatePermission": "EarnLoop does not write any health data."
         }
       ]
     ],

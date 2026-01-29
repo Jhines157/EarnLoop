@@ -41,6 +41,10 @@ const EarnScreen = () => {
   });
   const [refreshing, setRefreshing] = useState(false);
   const [loading, setLoading] = useState(false);
+  
+  // Session tracking for continuous ad watching
+  const [sessionAdsWatched, setSessionAdsWatched] = useState(0);
+  const [sessionCreditsEarned, setSessionCreditsEarned] = useState(0);
 
   useEffect(() => {
     loadEarnStatus();
@@ -156,11 +160,54 @@ const EarnScreen = () => {
             if (response.success && response.data) {
               updateBalance(response.data.newBalance);
               const tokensMsg = (response.data as any).tokensEarned ? `\n+${(response.data as any).tokensEarned} Fun Token! 🎰` : '';
-              Alert.alert('Ad Complete! 🎬', `You earned ${response.data.creditsEarned} credits!${tokensMsg}`);
-              loadEarnStatus();
+              const creditsEarned = response.data.creditsEarned;
+              
+              // Update session tracking
+              const newSessionAds = sessionAdsWatched + 1;
+              const newSessionCredits = sessionCreditsEarned + creditsEarned;
+              setSessionAdsWatched(newSessionAds);
+              setSessionCreditsEarned(newSessionCredits);
+              
+              // Build session stats message
+              const sessionMsg = newSessionAds > 1 
+                ? `\n\n📊 Session: ${newSessionAds} ads = ${newSessionCredits} credits` 
+                : '';
+              
+              // Milestone bonuses for watching multiple ads
+              const milestoneMsg = newSessionAds === 5 ? '\n\n🔥 5 ads in a row! Keep it up!' :
+                                   newSessionAds === 10 ? '\n\n🏆 10 ads! You\'re on fire!' :
+                                   newSessionAds === 20 ? '\n\n💎 20 ads! Incredible session!' : '';
+              
+              // Show "Watch Another?" prompt instead of just confirmation
+              Alert.alert(
+                '🎬 +' + creditsEarned + ' Credits!',
+                `Nice! Keep going to earn more.${tokensMsg}${sessionMsg}${milestoneMsg}`,
+                [
+                  { 
+                    text: 'Done', 
+                    style: 'cancel',
+                    onPress: () => {
+                      // Reset session when user stops
+                      setSessionAdsWatched(0);
+                      setSessionCreditsEarned(0);
+                      loadEarnStatus();
+                    }
+                  },
+                  { 
+                    text: '▶️ Watch Another +10', 
+                    style: 'default',
+                    onPress: () => {
+                      loadEarnStatus();
+                      // Small delay then show next ad
+                      setTimeout(() => handleWatchAd(), 300);
+                    }
+                  },
+                ]
+              );
             } else {
               console.error('Ad reward API error:', response.error);
               Alert.alert('Error', response.error?.message || 'Failed to process ad reward');
+              loadEarnStatus();
             }
           } catch (error: any) {
             console.error('Ad reward error:', error);
