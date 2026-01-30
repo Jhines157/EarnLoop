@@ -5,6 +5,13 @@ import { Resend } from 'resend';
 import pool from '../db';
 import { createError } from '../middleware/errorHandler';
 import { getCountryFromIP, getTierForCountry } from '../utils/geoPricing';
+import { 
+  runDraw, 
+  getDrawHistory, 
+  getGiveawayStats, 
+  GIVEAWAY_CONFIGS,
+  checkScheduledDraws 
+} from '../utils/drawSystem';
 
 // Lazy initialize Resend
 let resend: Resend | null = null;
@@ -1610,6 +1617,107 @@ router.get('/security/suspicious', async (req: Request, res: Response, next: Nex
   try {
     const suspicious = await getSuspiciousActivity();
     res.json({ success: true, data: { suspicious } });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// ============================================
+// GIVEAWAY DRAW ENDPOINTS
+// ============================================
+
+// Get all giveaway configurations
+router.get('/giveaways', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const giveaways = Object.values(GIVEAWAY_CONFIGS).map(config => ({
+      ...config,
+    }));
+
+    // Get current entry counts for each giveaway
+    const enrichedGiveaways = await Promise.all(
+      giveaways.map(async (g) => {
+        const stats = await getGiveawayStats(g.id);
+        return {
+          ...g,
+          currentParticipants: stats.totalParticipants,
+          currentEntries: stats.totalEntries,
+        };
+      })
+    );
+
+    res.json({ success: true, data: { giveaways: enrichedGiveaways } });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Get stats for a specific giveaway
+router.get('/giveaways/:id/stats', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { id } = req.params;
+    
+    if (!GIVEAWAY_CONFIGS[id]) {
+      return next(createError('Unknown giveaway ID', 404, 'UNKNOWN_GIVEAWAY'));
+    }
+
+    const stats = await getGiveawayStats(id);
+    const config = GIVEAWAY_CONFIGS[id];
+
+    res.json({ 
+      success: true, 
+      data: { 
+        giveaway: config,
+        stats,
+      } 
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Manually run a draw
+router.post('/giveaways/:id/draw', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { id } = req.params;
+    
+    if (!GIVEAWAY_CONFIGS[id]) {
+      return next(createError('Unknown giveaway ID', 404, 'UNKNOWN_GIVEAWAY'));
+    }
+
+    console.log(`🎰 Admin manually triggering draw for: ${id}`);
+    const result = await runDraw(id);
+
+    if (!result.success) {
+      return res.status(400).json({ 
+        success: false, 
+        error: { message: result.error || 'Draw failed', code: 'DRAW_FAILED' } 
+      });
+    }
+
+    res.json({ success: true, data: result });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Get draw history
+router.get('/giveaways/history', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const limit = parseInt(req.query.limit as string) || 20;
+    const history = await getDrawHistory(limit);
+
+    res.json({ success: true, data: { history } });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Manually check and run scheduled draws (for cron jobs)
+router.post('/giveaways/check-scheduled', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    console.log('🕐 Checking for scheduled draws...');
+    await checkScheduledDraws();
+    res.json({ success: true, data: { message: 'Scheduled draws checked' } });
   } catch (error) {
     next(error);
   }

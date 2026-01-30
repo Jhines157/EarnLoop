@@ -2,6 +2,7 @@ import { Router, Response, NextFunction } from 'express';
 import pool from '../db';
 import { authenticate, AuthRequest } from '../middleware/auth';
 import { createError } from '../middleware/errorHandler';
+import { GIVEAWAY_CONFIGS } from '../utils/drawSystem';
 
 const router = Router();
 
@@ -280,6 +281,165 @@ router.post('/earn-bonus', async (req: AuthRequest, res: Response, next: NextFun
         cooldownHours: BONUS_COOLDOWN_HOURS,
       },
     });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Get recent winners (public, for display in app)
+router.get('/winners', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const limit = parseInt(req.query.limit as string) || 10;
+    
+    const result = await pool.query(`
+      SELECT 
+        d.giveaway_id,
+        d.prize_type,
+        d.prize_value,
+        d.created_at,
+        CONCAT(
+          SUBSTRING(u.email FROM 1 FOR 3), 
+          '***', 
+          SUBSTRING(u.email FROM POSITION('@' IN u.email))
+        ) as winner_email_masked
+      FROM giveaway_draws d
+      JOIN users u ON u.id = d.winner_user_id
+      WHERE d.prize_delivered = TRUE
+      ORDER BY d.created_at DESC
+      LIMIT $1
+    `, [limit]);
+
+    const winners = result.rows.map(row => ({
+      giveawayId: row.giveaway_id,
+      giveawayName: GIVEAWAY_CONFIGS[row.giveaway_id]?.name || row.giveaway_id,
+      prizeType: row.prize_type,
+      prizeValue: row.prize_value,
+      prizeDescription: row.prize_type === 'credits' 
+        ? `${row.prize_value} Bonus Credits`
+        : `$${row.prize_value} Gift Card`,
+      winnerEmail: row.winner_email_masked,
+      wonAt: row.created_at,
+    }));
+
+    res.json({ success: true, data: { winners } });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Check if current user has won any giveaways
+router.get('/my-wins', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const userId = req.userId!;
+
+    const result = await pool.query(`
+      SELECT 
+        d.id,
+        d.giveaway_id,
+        d.prize_type,
+        d.prize_value,
+        d.prize_delivered,
+        d.created_at
+      FROM giveaway_draws d
+      WHERE d.winner_user_id = $1
+      ORDER BY d.created_at DESC
+    `, [userId]);
+
+    const wins = result.rows.map(row => ({
+      id: row.id,
+      giveawayId: row.giveaway_id,
+      giveawayName: GIVEAWAY_CONFIGS[row.giveaway_id]?.name || row.giveaway_id,
+      prizeType: row.prize_type,
+      prizeValue: row.prize_value,
+      prizeDescription: row.prize_type === 'credits' 
+        ? `${row.prize_value} Bonus Credits`
+        : `$${row.prize_value} Gift Card`,
+      delivered: row.prize_delivered,
+      wonAt: row.created_at,
+    }));
+
+    res.json({ 
+      success: true, 
+      data: { 
+        wins,
+        totalWins: wins.length,
+      } 
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Get current giveaway info (entry counts, time remaining, etc.)
+router.get('/current', async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const userId = req.userId!;
+    const giveaways = [];
+
+    for (const [id, config] of Object.entries(GIVEAWAY_CONFIGS)) {
+      // Get total participants and entries for this giveaway
+      const statsResult = await pool.query(`
+        SELECT 
+          COUNT(DISTINCT user_id) as participants,
+          SUM(entries_count) as total_entries
+        FROM giveaway_entries
+        WHERE giveaway_id = $1
+      `, [id]);
+
+      const stats = statsResult.rows[0];
+
+      // Get user's entries
+      const userResult = await pool.query(`
+        SELECT entry_type, entries_count
+        FROM giveaway_entries
+        WHERE user_id = $1 AND giveaway_id = $2
+      `, [userId, id]);
+
+      const userEntries = {
+        free: 0,
+        bonus: 0,
+        paid: 0,
+        total: 0,
+      };
+
+      for (const row of userResult.rows) {
+        if (row.entry_type === 'free') userEntries.free = row.entries_count || 1;
+        else if (row.entry_type === 'bonus') userEntries.bonus = row.entries_count;
+        else if (row.entry_type === 'paid') userEntries.paid = row.entries_count;
+      }
+      userEntries.total = userEntries.free + userEntries.bonus + userEntries.paid;
+
+      // Calculate end date
+      const now = new Date();
+      let endsAt: Date;
+      
+      if (config.frequency === 'weekly') {
+        // Next Sunday at 11 PM
+        const daysUntilSunday = (7 - now.getDay()) % 7 || 7;
+        endsAt = new Date(now);
+        endsAt.setDate(now.getDate() + daysUntilSunday);
+        endsAt.setHours(23, 0, 0, 0);
+      } else {
+        // Last day of month at 11 PM
+        endsAt = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+        endsAt.setHours(23, 0, 0, 0);
+      }
+
+      giveaways.push({
+        id,
+        name: config.name,
+        prizeType: config.prizeType,
+        prizeValue: config.prizeValue,
+        prizeDescription: config.prizeDescription,
+        frequency: config.frequency,
+        totalParticipants: parseInt(stats.participants) || 0,
+        totalEntries: parseInt(stats.total_entries) || 0,
+        endsAt: endsAt.toISOString(),
+        userEntries,
+      });
+    }
+
+    res.json({ success: true, data: { giveaways } });
   } catch (error) {
     next(error);
   }

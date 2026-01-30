@@ -13,6 +13,7 @@ import earnRoutes from './routes/earn';
 import storeRoutes from './routes/store';
 import userRoutes from './routes/user';
 import giveawayRoutes from './routes/giveaway';
+import { checkScheduledDraws } from './utils/drawSystem';
 
 let adminRoutes: any;
 try {
@@ -89,6 +90,26 @@ app.listen(PORT, () => {
   console.log('AdMob SSV endpoint ready at /earn/admob-ssv');
   console.log('Admin routes loaded at /admin');
   console.log('Server ready at: ' + new Date().toISOString());
+  
+  // Start the scheduled draw checker (runs every hour)
+  console.log('🎰 Starting scheduled giveaway draw checker...');
+  setInterval(async () => {
+    try {
+      await checkScheduledDraws();
+    } catch (error) {
+      console.error('Scheduled draw check failed:', error);
+    }
+  }, 60 * 60 * 1000); // Check every hour
+  
+  // Run once on startup
+  setTimeout(async () => {
+    try {
+      await checkScheduledDraws();
+      console.log('✅ Initial scheduled draw check complete');
+    } catch (error) {
+      console.error('Initial draw check failed:', error);
+    }
+  }, 5000); // 5 seconds after startup
 });
 
 export default app;

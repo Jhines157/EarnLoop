@@ -289,6 +289,51 @@ const migrate = async () => {
     `);
     console.log('✅ audit_logs indexes created');
 
+    // Giveaway draws table (stores draw results and winners)
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS giveaway_draws (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        giveaway_id VARCHAR(100) NOT NULL,
+        winner_user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+        total_participants INTEGER NOT NULL,
+        total_entries INTEGER NOT NULL,
+        prize_type VARCHAR(20) NOT NULL,
+        prize_value INTEGER NOT NULL,
+        prize_delivered BOOLEAN DEFAULT FALSE,
+        redemption_id UUID REFERENCES redemptions(id) ON DELETE SET NULL,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+      );
+    `);
+    console.log('✅ giveaway_draws table created');
+
+    // Index for draw queries
+    await pool.query(`
+      CREATE INDEX IF NOT EXISTS idx_giveaway_draws_giveaway ON giveaway_draws (giveaway_id, created_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_giveaway_draws_winner ON giveaway_draws (winner_user_id);
+    `);
+    console.log('✅ giveaway_draws indexes created');
+
+    // Giveaway entries archive (preserves entries after draws)
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS giveaway_entries_archive (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+        giveaway_id VARCHAR(100) NOT NULL,
+        entry_type VARCHAR(20) NOT NULL,
+        entries_count INTEGER DEFAULT 1,
+        draw_id UUID REFERENCES giveaway_draws(id) ON DELETE SET NULL,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+      );
+    `);
+    console.log('✅ giveaway_entries_archive table created');
+
+    // Add metadata column to redemptions if not exists (for giveaway wins)
+    await pool.query(`
+      ALTER TABLE redemptions 
+      ADD COLUMN IF NOT EXISTS metadata JSONB;
+    `);
+    console.log('✅ redemptions metadata column added');
+
     console.log('🎉 All migrations completed successfully!');
   } catch (error) {
     console.error('❌ Migration failed:', error);
