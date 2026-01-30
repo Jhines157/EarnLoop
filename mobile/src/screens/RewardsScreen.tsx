@@ -23,6 +23,7 @@ interface StoreItem {
   name: string;
   description: string;
   creditsCost: number;
+  baseCreditsCost?: number;
   itemType: string;
   category: string;
   durationDays: number | null;
@@ -32,6 +33,13 @@ interface StoreItem {
   ownedQuantity: number;
   canAfford: boolean;
   canRedeem: boolean;
+  isGeoPriced?: boolean;
+}
+
+interface PricingTier {
+  tier: number;
+  multiplier: number;
+  description: string;
 }
 
 interface Category {
@@ -53,6 +61,7 @@ const RewardsScreen = () => {
   const [giftCardModal, setGiftCardModal] = useState(false);
   const [selectedGiftCard, setSelectedGiftCard] = useState<StoreItem | null>(null);
   const [email, setEmail] = useState('');
+  const [pricingTier, setPricingTier] = useState<PricingTier | null>(null);
 
   useEffect(() => {
     loadStoreItems();
@@ -64,6 +73,7 @@ const RewardsScreen = () => {
       if (response.success && response.data) {
         setCategories(response.data.categories || []);
         setItemsByCategory(response.data.itemsByCategory || {});
+        setPricingTier(response.data.pricingTier || null);
         // Select first category with items
         const firstCategoryWithItems = response.data.categories?.find(
           (c: Category) => response.data.itemsByCategory[c.id]?.length > 0
@@ -184,6 +194,9 @@ const RewardsScreen = () => {
     }
     if (item.ownedQuantity > 0 && item.itemType === 'consumable') {
       return { text: `×${item.ownedQuantity}`, color: colors.info };
+    }
+    if (item.isGeoPriced) {
+      return { text: '🌍 Regional', color: colors.info };
     }
     if (item.itemType === 'boost') {
       return { text: '2X', color: colors.warning };
@@ -344,6 +357,19 @@ const RewardsScreen = () => {
             </View>
           )}
         </View>
+
+        {/* Regional Pricing Info (only show if user has geo-pricing) */}
+        {pricingTier && pricingTier.multiplier > 1 && (
+          <View style={styles.regionalBanner}>
+            <Text style={styles.regionalIcon}>🌍</Text>
+            <View style={styles.regionalTextContainer}>
+              <Text style={styles.regionalTitle}>Regional Pricing Active</Text>
+              <Text style={styles.regionalSubtext}>
+                Gift card prices are adjusted for your region to ensure fair rewards based on local ad rates.
+              </Text>
+            </View>
+          </View>
+        )}
 
         {/* Info */}
         <View style={styles.infoCard}>
@@ -634,6 +660,34 @@ const createStyles = (colors: any) => StyleSheet.create({
     ...typography.caption,
     color: colors.textSecondary,
     lineHeight: 18,
+  },
+  regionalBanner: {
+    backgroundColor: colors.info + '15',
+    borderRadius: borderRadius.md,
+    padding: spacing.md,
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.info + '30',
+  },
+  regionalIcon: {
+    fontSize: 24,
+    marginRight: spacing.sm,
+  },
+  regionalTextContainer: {
+    flex: 1,
+  },
+  regionalTitle: {
+    ...typography.bodySmall,
+    color: colors.info,
+    fontWeight: '600',
+    marginBottom: 2,
+  },
+  regionalSubtext: {
+    ...typography.caption,
+    color: colors.textSecondary,
+    lineHeight: 16,
   },
   modalOverlay: {
     flex: 1,
