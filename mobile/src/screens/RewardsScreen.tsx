@@ -31,6 +31,7 @@ interface StoreItem {
   icon: string;
   userRedemptions: number;
   ownedQuantity: number;
+  activeUntil: string | null; // When boost expires
   canAfford: boolean;
   canRedeem: boolean;
   isGeoPriced?: boolean;
@@ -189,7 +190,28 @@ const RewardsScreen = () => {
     return `${days} days`;
   };
 
+  const formatTimeRemaining = (expiresAt: string) => {
+    const now = new Date();
+    const expires = new Date(expiresAt);
+    const diffMs = expires.getTime() - now.getTime();
+    if (diffMs <= 0) return null;
+    
+    const hours = Math.floor(diffMs / (1000 * 60 * 60));
+    const days = Math.floor(hours / 24);
+    
+    if (days > 0) return `${days}d left`;
+    if (hours > 0) return `${hours}h left`;
+    return 'Expiring soon';
+  };
+
   const getItemBadge = (item: StoreItem) => {
+    // For boosts, show "ACTIVE" with time remaining
+    if (item.itemType === 'boost' && item.activeUntil) {
+      const timeRemaining = formatTimeRemaining(item.activeUntil);
+      if (timeRemaining) {
+        return { text: `⚡ ${timeRemaining}`, color: colors.success };
+      }
+    }
     if (item.ownedQuantity > 0 && item.itemType !== 'consumable') {
       return { text: 'OWNED', color: colors.success };
     }
@@ -289,7 +311,9 @@ const RewardsScreen = () => {
             <View style={styles.itemsGrid}>
               {currentItems.map((item) => {
                 const badge = getItemBadge(item);
-                const isOwned = item.ownedQuantity > 0 && item.itemType !== 'consumable';
+                // For boosts, check if actively running (has non-expired activeUntil)
+                const isBoostActive = item.itemType === 'boost' && item.activeUntil && new Date(item.activeUntil) > new Date();
+                const isOwned = isBoostActive || (item.ownedQuantity > 0 && item.itemType !== 'consumable' && item.itemType !== 'boost');
                 
                 return (
                   <TouchableOpacity
@@ -334,7 +358,7 @@ const RewardsScreen = () => {
                       item.canAfford || isOwned ? styles.priceTagAffordable : styles.priceTagExpensive,
                     ]}>
                       {isOwned ? (
-                        <Text style={styles.priceOwned}>✓ Owned</Text>
+                        <Text style={styles.priceOwned}>{isBoostActive ? '✓ Active' : '✓ Owned'}</Text>
                       ) : (
                         <>
                           <Text style={[

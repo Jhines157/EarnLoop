@@ -21,7 +21,18 @@ router.get('/items', async (req: AuthRequest, res: Response, next: NextFunction)
     const countryCode = userResult.rows[0]?.country_code || null;
     const tierInfo = getTierInfo(countryCode);
 
+    // First, clean up expired boosts (set is_active = false)
+    await pool.query(`
+      UPDATE user_inventory 
+      SET is_active = false 
+      WHERE item_type = 'boost' 
+        AND is_active = true 
+        AND expires_at IS NOT NULL 
+        AND expires_at < NOW()
+    `);
+
     // Get items with user's redemption count
+    // For boosts, only count as "owned" if currently active and not expired
     const result = await pool.query(`
       SELECT 
         si.*,
@@ -29,8 +40,15 @@ router.get('/items', async (req: AuthRequest, res: Response, next: NextFunction)
           (SELECT COUNT(*) FROM redemptions r WHERE r.item_id = si.id AND r.user_id = $1), 0
         ) as user_redemptions,
         COALESCE(
-          (SELECT quantity FROM user_inventory ui WHERE ui.item_id = si.id AND ui.user_id = $1), 0
-        ) as owned_quantity
+          CASE 
+            WHEN si.item_type = 'boost' THEN 
+              (SELECT CASE WHEN is_active = true AND (expires_at IS NULL OR expires_at > NOW()) THEN quantity ELSE 0 END 
+               FROM user_inventory ui WHERE ui.item_id = si.id AND ui.user_id = $1)
+            ELSE 
+              (SELECT quantity FROM user_inventory ui WHERE ui.item_id = si.id AND ui.user_id = $1)
+          END, 0
+        ) as owned_quantity,
+        (SELECT expires_at FROM user_inventory ui WHERE ui.item_id = si.id AND ui.user_id = $1 AND ui.is_active = true) as active_until
       FROM store_items si
       WHERE si.is_active = true
       ORDER BY si.category, si.sort_order ASC
@@ -71,6 +89,7 @@ router.get('/items', async (req: AuthRequest, res: Response, next: NextFunction)
         icon: item.icon || '🎁',
         userRedemptions: parseInt(item.user_redemptions),
         ownedQuantity: parseInt(item.owned_quantity),
+        activeUntil: item.active_until, // When boost expires (null if not active)
         canAfford: balance >= adjustedCost,
         canRedeem: item.max_per_user === null || parseInt(item.user_redemptions) < item.max_per_user,
         isGeoPriced: isGiftCard, // All gift cards are geo-priced
