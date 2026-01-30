@@ -8,6 +8,7 @@ import pool from '../db';
 import { authRateLimiter } from '../middleware/rateLimiter';
 import { createError } from '../middleware/errorHandler';
 import { authenticate, AuthRequest } from '../middleware/auth';
+import { getCountryFromIP, getTierForCountry } from '../utils/geoPricing';
 
 const router = Router();
 
@@ -36,10 +37,22 @@ router.post('/signup', async (req: Request, res: Response, next: NextFunction) =
     // Hash password
     const passwordHash = await bcrypt.hash(password, 12);
 
+    // Detect country from IP for geo-pricing
+    let countryCode: string | null = null;
+    let pricingTier = 3;
+    try {
+      const clientIP = (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() || req.ip || '';
+      countryCode = await getCountryFromIP(clientIP);
+      pricingTier = getTierForCountry(countryCode);
+      console.log(`📍 New signup from ${countryCode || 'unknown'} (Tier ${pricingTier})`);
+    } catch (err) {
+      console.error('Failed to detect country:', err);
+    }
+
     // Create user
     const userResult = await pool.query(
-      'INSERT INTO users (email, password_hash) VALUES ($1, $2) RETURNING id, email, created_at',
-      [email.toLowerCase(), passwordHash]
+      'INSERT INTO users (email, password_hash, country_code, pricing_tier) VALUES ($1, $2, $3, $4) RETURNING id, email, created_at, country_code, pricing_tier',
+      [email.toLowerCase(), passwordHash, countryCode, pricingTier]
     );
     const user = userResult.rows[0];
 

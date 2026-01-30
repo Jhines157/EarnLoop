@@ -207,6 +207,14 @@ router.post('/run-migrations', async (req: Request, res: Response, next: NextFun
     `);
     results.push('streak_savers column');
 
+    // Add country and pricing_tier columns to users table for geo-pricing
+    await pool.query(`
+      ALTER TABLE users 
+      ADD COLUMN IF NOT EXISTS country_code VARCHAR(2),
+      ADD COLUMN IF NOT EXISTS pricing_tier INTEGER DEFAULT 3;
+    `);
+    results.push('users geo-pricing columns');
+
     // Add gift card columns to redemptions table
     await pool.query(`
       ALTER TABLE redemptions 

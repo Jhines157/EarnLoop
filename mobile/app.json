@@ -114,10 +114,10 @@
         }
       ],
       [
-        "react-native-health",
+        "@kingstinct/react-native-healthkit",
         {
-          "healthSharePermission": "EarnLoop needs access to your step count to convert your walking activity into rewards.",
-          "healthUpdatePermission": "EarnLoop does not write any health data."
+          "NSHealthShareUsageDescription": "EarnLoop needs access to your step count to convert your walking activity into rewards.",
+          "NSHealthUpdateUsageDescription": "EarnLoop does not write any health data."
         }
       ]
     ],

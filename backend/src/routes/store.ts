@@ -2,6 +2,7 @@ import { Router, Response, NextFunction } from 'express';
 import pool from '../db';
 import { authenticate, AuthRequest } from '../middleware/auth';
 import { createError } from '../middleware/errorHandler';
+import { getAdjustedPrice, getTierInfo } from '../utils/geoPricing';
 
 const router = Router();
 
@@ -11,6 +12,14 @@ router.use(authenticate);
 router.get('/items', async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const userId = req.userId!;
+
+    // Get user's pricing tier for geo-based pricing
+    const userResult = await pool.query(
+      'SELECT country_code, pricing_tier FROM users WHERE id = $1',
+      [userId]
+    );
+    const countryCode = userResult.rows[0]?.country_code || null;
+    const tierInfo = getTierInfo(countryCode);
 
     // Get items with user's redemption count
     const result = await pool.query(`
@@ -43,11 +52,18 @@ router.get('/items', async (req: AuthRequest, res: Response, next: NextFunction)
         itemsByCategory[category] = [];
       }
       
+      // Apply geo-pricing multiplier ONLY to gift cards
+      const isGiftCard = item.item_type === 'giftcard';
+      const adjustedCost = isGiftCard 
+        ? getAdjustedPrice(item.credits_cost, countryCode)
+        : item.credits_cost;
+      
       itemsByCategory[category].push({
         id: item.id,
         name: item.name,
         description: item.description,
-        creditsCost: item.credits_cost,
+        creditsCost: adjustedCost,
+        baseCreditsCost: item.credits_cost, // Original price for reference
         itemType: item.item_type,
         category: item.category,
         durationDays: item.duration_days,
@@ -55,8 +71,9 @@ router.get('/items', async (req: AuthRequest, res: Response, next: NextFunction)
         icon: item.icon || '🎁',
         userRedemptions: parseInt(item.user_redemptions),
         ownedQuantity: parseInt(item.owned_quantity),
-        canAfford: balance >= item.credits_cost,
+        canAfford: balance >= adjustedCost,
         canRedeem: item.max_per_user === null || parseInt(item.user_redemptions) < item.max_per_user,
+        isGeoPriced: isGiftCard && tierInfo.multiplier > 1,
       });
     });
 
@@ -72,6 +89,7 @@ router.get('/items', async (req: AuthRequest, res: Response, next: NextFunction)
         categories,
         itemsByCategory,
         balance,
+        pricingTier: tierInfo,
       },
     });
   } catch (error) {
@@ -89,6 +107,13 @@ router.post('/redeem', async (req: AuthRequest, res: Response, next: NextFunctio
       return next(createError('Item ID required', 400, 'MISSING_ITEM_ID'));
     }
 
+    // Get user's country for geo-pricing
+    const userResult = await pool.query(
+      'SELECT country_code FROM users WHERE id = $1',
+      [userId]
+    );
+    const countryCode = userResult.rows[0]?.country_code || null;
+
     // Get item details
     const itemResult = await pool.query(
       'SELECT * FROM store_items WHERE id = $1 AND is_active = true',
@@ -100,9 +125,15 @@ router.post('/redeem', async (req: AuthRequest, res: Response, next: NextFunctio
     }
 
     const item = itemResult.rows[0];
+    
+    // Apply geo-pricing for gift cards
+    const isGiftCard = item.item_type === 'giftcard';
+    const actualCost = isGiftCard 
+      ? getAdjustedPrice(item.credits_cost, countryCode)
+      : item.credits_cost;
 
     // Gift cards require email
-    if (item.item_type === 'giftcard') {
+    if (isGiftCard) {
       if (!email) {
         return next(createError('Email required for gift card redemption', 400, 'EMAIL_REQUIRED'));
       }
@@ -119,8 +150,8 @@ router.post('/redeem', async (req: AuthRequest, res: Response, next: NextFunctio
     );
     const balance = balanceResult.rows[0]?.credits_balance || 0;
 
-    // Check if user can afford
-    if (balance < item.credits_cost) {
+    // Check if user can afford (using geo-adjusted price)
+    if (balance < actualCost) {
       return next(createError('Insufficient credits', 400, 'INSUFFICIENT_CREDITS'));
     }
 
@@ -142,21 +173,21 @@ router.post('/redeem', async (req: AuthRequest, res: Response, next: NextFunctio
       expiresAt.setDate(expiresAt.getDate() + item.duration_days);
     }
 
-    // Create redemption record (with email for gift cards)
+    // Create redemption record (with email for gift cards, using geo-adjusted price)
     await pool.query(
       `INSERT INTO redemptions (user_id, item_id, credits_spent, expires_at, delivery_email, status)
        VALUES ($1, $2, $3, $4, $5, $6)`,
-      [userId, itemId, item.credits_cost, expiresAt, email || null, item.item_type === 'giftcard' ? 'pending' : 'completed']
+      [userId, itemId, actualCost, expiresAt, email || null, item.item_type === 'giftcard' ? 'pending' : 'completed']
     );
 
-    // Deduct credits
+    // Deduct credits (using geo-adjusted price)
     await pool.query(
       `UPDATE balances 
        SET credits_balance = credits_balance - $1, 
            lifetime_spent = lifetime_spent + $1,
            updated_at = NOW()
        WHERE user_id = $2`,
-      [item.credits_cost, userId]
+      [actualCost, userId]
     );
 
     // Handle special item types

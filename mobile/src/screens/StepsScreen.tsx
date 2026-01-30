@@ -8,10 +8,14 @@ import {
   TouchableOpacity,
   Alert,
   Dimensions,
+  Linking,
+  Platform,
+  AlertButton,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import Svg, { Circle, G } from 'react-native-svg';
-import Animated, { FadeInDown, FadeInUp } from 'react-native-reanimated';
+import Svg, { Circle, G, Defs, LinearGradient, Stop } from 'react-native-svg';
+import Animated, { FadeInDown, FadeInUp, FadeIn } from 'react-native-reanimated';
+import { LinearGradient as ExpoGradient } from 'expo-linear-gradient';
 
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
@@ -21,8 +25,8 @@ import adMobService from '../services/adMob';
 import { spacing, borderRadius, typography } from '../utils/theme';
 
 const { width } = Dimensions.get('window');
-const RING_SIZE = width * 0.65;
-const STROKE_WIDTH = 20;
+const RING_SIZE = width * 0.7;
+const STROKE_WIDTH = 16;
 const RADIUS = (RING_SIZE - STROKE_WIDTH) / 2;
 const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
 
@@ -70,6 +74,32 @@ const StepsScreen = () => {
     if (ready) {
       const steps = await healthKitService.getTodaySteps();
       setTodaySteps(steps);
+    }
+  };
+
+  const openHealthKitSettings = async () => {
+    // First try to initialize - this may prompt the permission dialog
+    const ready = await healthKitService.initialize();
+    if (ready) {
+      setHealthKitReady(true);
+      const steps = await healthKitService.getTodaySteps();
+      setTodaySteps(steps);
+      Alert.alert('Success! 🎉', 'HealthKit is now connected. Start walking to earn credits!');
+    } else {
+      // If still not ready, open Settings
+      Alert.alert(
+        'Enable HealthKit',
+        'To track your steps, please enable HealthKit access in Settings:\n\n1. Tap "Open Settings"\n2. Go to Health → Data Access\n3. Enable all permissions for EarnLoop',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Open Settings',
+            onPress: () => {
+              Linking.openURL('app-settings:');
+            },
+          },
+        ]
+      );
     }
   };
 
@@ -192,7 +222,7 @@ const StepsScreen = () => {
                 [
                   {
                     text: 'Done',
-                    style: 'cancel',
+                    style: 'cancel' as const,
                     onPress: () => {
                       setSessionAdsWatched(0);
                       setSessionCreditsEarned(0);
@@ -201,17 +231,17 @@ const StepsScreen = () => {
                   },
                   remainingAds > 0 ? {
                     text: '▶️ Convert Another',
-                    style: 'default',
+                    style: 'default' as const,
                     onPress: () => {
                       loadStepData();
                       setTimeout(() => handleConvertSteps(), 300);
                     },
                   } : {
                     text: 'Keep Walking! 🚶',
-                    style: 'default',
+                    style: 'default' as const,
                     onPress: () => loadStepData(),
                   },
-                ].filter(Boolean)
+                ].filter(Boolean) as AlertButton[]
               );
             } else {
               Alert.alert('Error', response.error?.message || 'Failed to convert steps');
@@ -263,62 +293,80 @@ const StepsScreen = () => {
 
         {/* Progress Ring */}
         <Animated.View entering={FadeInUp.delay(200)} style={styles.ringContainer}>
-          <Svg width={RING_SIZE} height={RING_SIZE}>
-            <G rotation="-90" origin={`${RING_SIZE / 2}, ${RING_SIZE / 2}`}>
-              {/* Background circle */}
-              <Circle
-                cx={RING_SIZE / 2}
-                cy={RING_SIZE / 2}
-                r={RADIUS}
-                stroke={colors.surface}
-                strokeWidth={STROKE_WIDTH}
-                fill="none"
-              />
-              {/* Progress circle */}
-              <Circle
-                cx={RING_SIZE / 2}
-                cy={RING_SIZE / 2}
-                r={RADIUS}
-                stroke={colors.primary}
-                strokeWidth={STROKE_WIDTH}
-                fill="none"
-                strokeDasharray={CIRCUMFERENCE}
-                strokeDashoffset={strokeDashoffset}
-                strokeLinecap="round"
-              />
-            </G>
-          </Svg>
+          <View style={styles.ringWrapper}>
+            <Svg width={RING_SIZE} height={RING_SIZE}>
+              <Defs>
+                <LinearGradient id="progressGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <Stop offset="0%" stopColor="#10B981" />
+                  <Stop offset="50%" stopColor="#22C55E" />
+                  <Stop offset="100%" stopColor="#4ADE80" />
+                </LinearGradient>
+              </Defs>
+              <G rotation="-90" origin={`${RING_SIZE / 2}, ${RING_SIZE / 2}`}>
+                {/* Background circle */}
+                <Circle
+                  cx={RING_SIZE / 2}
+                  cy={RING_SIZE / 2}
+                  r={RADIUS}
+                  stroke={colors.backgroundCard}
+                  strokeWidth={STROKE_WIDTH}
+                  fill="none"
+                  opacity={0.5}
+                />
+                {/* Progress circle with gradient */}
+                <Circle
+                  cx={RING_SIZE / 2}
+                  cy={RING_SIZE / 2}
+                  r={RADIUS}
+                  stroke="url(#progressGradient)"
+                  strokeWidth={STROKE_WIDTH}
+                  fill="none"
+                  strokeDasharray={CIRCUMFERENCE}
+                  strokeDashoffset={strokeDashoffset}
+                  strokeLinecap="round"
+                />
+              </G>
+            </Svg>
+            
+            {/* Milestone markers positioned around ring */}
+            {[5000, 10000, 15000, 20000, 25000, 30000].map((milestone) => {
+              const progress = milestone / STEP_CONFIG.MAX_DAILY_STEPS;
+              const angleRad = (progress * 2 * Math.PI) - (Math.PI / 2); // Start from top
+              const markerRadius = RING_SIZE / 2 + 25; // Outside the ring
+              const x = RING_SIZE / 2 + Math.cos(angleRad) * markerRadius;
+              const y = RING_SIZE / 2 + Math.sin(angleRad) * markerRadius;
+              const reached = todaySteps >= milestone;
+              
+              return (
+                <View
+                  key={milestone}
+                  style={[
+                    styles.milestoneMarker,
+                    {
+                      left: x - 18,
+                      top: y - 12,
+                    },
+                  ]}
+                >
+                  <View style={[styles.milestoneBadge, reached && styles.milestoneBadgeReached]}>
+                    <Text style={[styles.milestoneText, reached && styles.milestoneTextReached]}>
+                      {reached ? '✓' : `${milestone / 1000}k`}
+                    </Text>
+                  </View>
+                </View>
+              );
+            })}
+          </View>
           
           {/* Center content */}
           <View style={styles.ringCenter}>
+            <Text style={styles.stepsEmoji}>👟</Text>
             <Text style={styles.stepCount}>{todaySteps.toLocaleString()}</Text>
             <Text style={styles.stepLabel}>steps today</Text>
-            <Text style={styles.goalText}>Goal: {STEP_CONFIG.MAX_DAILY_STEPS.toLocaleString()}</Text>
+            <View style={styles.goalBadge}>
+              <Text style={styles.goalBadgeText}>Goal: {(STEP_CONFIG.MAX_DAILY_STEPS / 1000).toFixed(0)}k</Text>
+            </View>
           </View>
-
-          {/* Milestone markers around ring */}
-          {[5000, 10000, 15000, 20000, 25000, 30000].map((milestone, index) => {
-            const angle = (milestone / STEP_CONFIG.MAX_DAILY_STEPS) * 360 - 90;
-            const reached = todaySteps >= milestone;
-            return (
-              <View
-                key={milestone}
-                style={[
-                  styles.milestoneMarker,
-                  {
-                    transform: [
-                      { rotate: `${angle}deg` },
-                      { translateX: RING_SIZE / 2 - 15 },
-                    ],
-                  },
-                ]}
-              >
-                <Text style={[styles.milestoneText, reached && styles.milestoneReached]}>
-                  {reached ? '✓' : `${milestone / 1000}k`}
-                </Text>
-              </View>
-            );
-          })}
         </Animated.View>
 
         {/* Convert Button */}
@@ -331,17 +379,26 @@ const StepsScreen = () => {
             onPress={handleConvertSteps}
             disabled={converting || adsAvailable <= 0}
           >
-            <Text style={styles.convertButtonText}>
-              {converting ? '⏳ Loading...' : adsAvailable > 0 
-                ? `🚶 Convert Steps (+${creditsAvailable} credits)` 
-                : `Walk ${stepsToNextAd.toLocaleString()} more steps`}
-            </Text>
+            <ExpoGradient
+              colors={adsAvailable > 0 ? ['#10B981', '#059669'] : [colors.backgroundCard, colors.backgroundCard]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.convertButtonGradient}
+            >
+              <Text style={[styles.convertButtonText, adsAvailable <= 0 && { color: colors.textSecondary }]}>
+                {converting ? '⏳ Loading...' : adsAvailable > 0 
+                  ? `👟 Convert Steps → +${creditsAvailable} credits` 
+                  : `🚶 Walk ${stepsToNextAd.toLocaleString()} more steps`}
+              </Text>
+            </ExpoGradient>
           </TouchableOpacity>
           
           {adsAvailable > 0 && (
-            <Text style={styles.convertSubtext}>
-              {adsAvailable} ads available • Watch to earn {creditsAvailable} credits
-            </Text>
+            <View style={styles.convertInfo}>
+              <Text style={styles.convertInfoText}>
+                🎬 {adsAvailable} {adsAvailable === 1 ? 'ad' : 'ads'} ready to convert
+              </Text>
+            </View>
           )}
         </Animated.View>
 
@@ -354,15 +411,18 @@ const StepsScreen = () => {
               const progress = Math.min(1, todaySteps / goal.goal);
               return (
                 <View key={goal.goal} style={[styles.goalItem, reached && styles.goalItemReached]}>
-                  <View style={styles.goalProgress}>
-                    <View style={[styles.goalProgressBar, { width: `${progress * 100}%` }]} />
+                  <View style={styles.goalIconContainer}>
+                    <Text style={styles.goalIcon}>{reached ? '✅' : '🎯'}</Text>
                   </View>
                   <Text style={[styles.goalSteps, reached && styles.goalTextReached]}>
-                    {reached ? '✓' : ''} {(goal.goal / 1000).toFixed(0)}k
+                    {(goal.goal / 1000).toFixed(0)}k
                   </Text>
                   <Text style={[styles.goalReward, reached && styles.goalTextReached]}>
-                    +{goal.rewards}
+                    +{goal.rewards} 💰
                   </Text>
+                  <View style={styles.goalProgress}>
+                    <View style={[styles.goalProgressBar, { width: `${progress * 100}%`, backgroundColor: reached ? '#10B981' : colors.primary }]} />
+                  </View>
                 </View>
               );
             })}
@@ -384,18 +444,29 @@ const StepsScreen = () => {
             </View>
           </View>
           <Text style={styles.streakHint}>
-            Convert at least 1 ad from steps daily to maintain your streak!
+            💡 Convert at least 1 ad from steps daily to maintain your streak!
           </Text>
         </Animated.View>
 
         {/* HealthKit Status */}
         {!healthKitReady && (
-          <Animated.View entering={FadeInUp.delay(600)} style={styles.healthKitWarning}>
+          <Animated.View entering={FadeIn.delay(600)} style={styles.healthKitWarning}>
+            <View style={styles.warningHeader}>
+              <Text style={styles.warningIcon}>⚠️</Text>
+              <Text style={styles.warningTitle}>HealthKit Not Connected</Text>
+            </View>
             <Text style={styles.warningText}>
-              ⚠️ Step tracking requires HealthKit access. Please enable it in Settings.
+              Enable HealthKit to start tracking your steps and earning credits!
             </Text>
-            <TouchableOpacity style={styles.enableButton} onPress={initializeHealthKit}>
-              <Text style={styles.enableButtonText}>Enable HealthKit</Text>
+            <TouchableOpacity style={styles.enableButton} onPress={openHealthKitSettings}>
+              <ExpoGradient
+                colors={['#10B981', '#059669']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.enableButtonGradient}
+              >
+                <Text style={styles.enableButtonText}>🔓 Enable HealthKit</Text>
+              </ExpoGradient>
             </TouchableOpacity>
           </Animated.View>
         )}
@@ -418,83 +489,132 @@ const createStyles = (colors: any) =>
       flexDirection: 'row',
       justifyContent: 'space-around',
       marginBottom: spacing.lg,
+      backgroundColor: colors.backgroundCard,
+      padding: spacing.md,
+      borderRadius: borderRadius.lg,
     },
     statItem: {
       alignItems: 'center',
     },
     statValue: {
-      fontSize: 20,
-      fontWeight: '700',
-      color: colors.text,
+      fontSize: 22,
+      fontWeight: '800',
+      color: colors.textPrimary,
     },
     statLabel: {
-      fontSize: 12,
-      color: colors.textSecondary,
-      marginTop: 2,
+      fontSize: 11,
+      color: colors.textPrimarySecondary,
+      marginTop: 4,
     },
     ringContainer: {
       alignItems: 'center',
       justifyContent: 'center',
-      marginBottom: spacing.lg,
+      marginBottom: spacing.xl,
+      paddingVertical: spacing.lg,
+    },
+    ringWrapper: {
+      position: 'relative',
+      width: RING_SIZE + 60,
+      height: RING_SIZE + 60,
+      alignItems: 'center',
+      justifyContent: 'center',
     },
     ringCenter: {
       position: 'absolute',
       alignItems: 'center',
+      justifyContent: 'center',
+    },
+    stepsEmoji: {
+      fontSize: 28,
+      marginBottom: 4,
     },
     stepCount: {
-      fontSize: 42,
+      fontSize: 44,
       fontWeight: '800',
-      color: colors.text,
+      color: colors.textPrimary,
+      letterSpacing: -1,
     },
     stepLabel: {
-      fontSize: 16,
-      color: colors.textSecondary,
+      fontSize: 14,
+      color: colors.textPrimarySecondary,
+      marginTop: 2,
     },
-    goalText: {
+    goalBadge: {
+      marginTop: 8,
+      backgroundColor: colors.backgroundCard,
+      paddingHorizontal: 12,
+      paddingVertical: 4,
+      borderRadius: borderRadius.full,
+    },
+    goalBadgeText: {
       fontSize: 12,
-      color: colors.textSecondary,
-      marginTop: 4,
+      color: colors.textPrimarySecondary,
+      fontWeight: '600',
     },
     milestoneMarker: {
       position: 'absolute',
-      width: 30,
-      height: 30,
       alignItems: 'center',
       justifyContent: 'center',
     },
+    milestoneBadge: {
+      backgroundColor: colors.backgroundCard,
+      paddingHorizontal: 8,
+      paddingVertical: 4,
+      borderRadius: borderRadius.full,
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    milestoneBadgeReached: {
+      backgroundColor: '#10B98120',
+      borderColor: '#10B981',
+    },
     milestoneText: {
       fontSize: 10,
-      color: colors.textSecondary,
-      fontWeight: '600',
+      color: colors.textPrimarySecondary,
+      fontWeight: '700',
     },
-    milestoneReached: {
-      color: colors.success,
-      fontSize: 14,
+    milestoneTextReached: {
+      color: '#10B981',
     },
     convertSection: {
       alignItems: 'center',
       marginBottom: spacing.xl,
     },
     convertButton: {
-      backgroundColor: colors.primary,
-      paddingVertical: spacing.md,
-      paddingHorizontal: spacing.xl,
       borderRadius: borderRadius.full,
-      minWidth: '80%',
+      overflow: 'hidden',
+      minWidth: '90%',
+      shadowColor: '#10B981',
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.3,
+      shadowRadius: 8,
+      elevation: 4,
+    },
+    convertButtonGradient: {
+      paddingVertical: spacing.md + 2,
+      paddingHorizontal: spacing.xl,
       alignItems: 'center',
+      justifyContent: 'center',
     },
     convertButtonDisabled: {
-      backgroundColor: colors.surface,
+      shadowOpacity: 0,
     },
     convertButtonText: {
       color: '#fff',
       fontSize: 16,
       fontWeight: '700',
     },
-    convertSubtext: {
+    convertInfo: {
       marginTop: spacing.sm,
+      backgroundColor: colors.backgroundCard,
+      paddingHorizontal: 12,
+      paddingVertical: 6,
+      borderRadius: borderRadius.full,
+    },
+    convertInfoText: {
       fontSize: 12,
-      color: colors.textSecondary,
+      color: colors.textPrimarySecondary,
+      fontWeight: '500',
     },
     goalsSection: {
       marginBottom: spacing.xl,
@@ -502,7 +622,7 @@ const createStyles = (colors: any) =>
     sectionTitle: {
       fontSize: 18,
       fontWeight: '700',
-      color: colors.text,
+      color: colors.textPrimary,
       marginBottom: spacing.md,
     },
     goalsGrid: {
@@ -512,23 +632,29 @@ const createStyles = (colors: any) =>
     },
     goalItem: {
       width: '23%',
-      backgroundColor: colors.surface,
-      borderRadius: borderRadius.md,
+      backgroundColor: colors.backgroundCard,
+      borderRadius: borderRadius.lg,
       padding: spacing.sm,
       marginBottom: spacing.sm,
       alignItems: 'center',
     },
     goalItemReached: {
-      backgroundColor: colors.success + '20',
-      borderWidth: 1,
-      borderColor: colors.success,
+      backgroundColor: '#10B98115',
+      borderWidth: 1.5,
+      borderColor: '#10B981',
+    },
+    goalIconContainer: {
+      marginBottom: 4,
+    },
+    goalIcon: {
+      fontSize: 16,
     },
     goalProgress: {
       width: '100%',
-      height: 4,
+      height: 3,
       backgroundColor: colors.border,
       borderRadius: 2,
-      marginBottom: 4,
+      marginTop: 6,
       overflow: 'hidden',
     },
     goalProgressBar: {
@@ -537,23 +663,24 @@ const createStyles = (colors: any) =>
       borderRadius: 2,
     },
     goalSteps: {
-      fontSize: 12,
-      fontWeight: '600',
-      color: colors.text,
+      fontSize: 13,
+      fontWeight: '700',
+      color: colors.textPrimary,
     },
     goalReward: {
       fontSize: 10,
-      color: colors.textSecondary,
+      color: colors.textPrimarySecondary,
+      marginTop: 2,
     },
     goalTextReached: {
-      color: colors.success,
+      color: '#10B981',
     },
     streakSection: {
       marginBottom: spacing.xl,
     },
     streakCard: {
       flexDirection: 'row',
-      backgroundColor: colors.surface,
+      backgroundColor: colors.backgroundCard,
       borderRadius: borderRadius.lg,
       padding: spacing.lg,
       alignItems: 'center',
@@ -563,45 +690,75 @@ const createStyles = (colors: any) =>
       alignItems: 'center',
     },
     streakNumber: {
-      fontSize: 36,
+      fontSize: 40,
       fontWeight: '800',
-      color: colors.primary,
+      color: '#10B981',
     },
     streakLabel: {
       fontSize: 12,
-      color: colors.textSecondary,
+      color: colors.textPrimarySecondary,
+      marginTop: 4,
     },
     streakDivider: {
       width: 1,
       height: 50,
       backgroundColor: colors.border,
+      marginHorizontal: spacing.md,
     },
     streakHint: {
       fontSize: 12,
-      color: colors.textSecondary,
+      color: colors.textPrimarySecondary,
       textAlign: 'center',
-      marginTop: spacing.sm,
+      marginTop: spacing.md,
+      backgroundColor: colors.backgroundCard,
+      padding: spacing.sm,
+      borderRadius: borderRadius.md,
     },
     healthKitWarning: {
-      backgroundColor: colors.warning + '20',
-      padding: spacing.md,
-      borderRadius: borderRadius.md,
+      backgroundColor: '#F59E0B15',
+      padding: spacing.lg,
+      borderRadius: borderRadius.lg,
       alignItems: 'center',
+      borderWidth: 1,
+      borderColor: '#F59E0B40',
     },
-    warningText: {
-      color: colors.warning,
-      textAlign: 'center',
+    warningHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
       marginBottom: spacing.sm,
     },
+    warningIcon: {
+      fontSize: 20,
+      marginRight: 8,
+    },
+    warningTitle: {
+      fontSize: 16,
+      fontWeight: '700',
+      color: '#F59E0B',
+    },
+    warningText: {
+      color: colors.textPrimarySecondary,
+      textAlign: 'center',
+      marginBottom: spacing.md,
+      fontSize: 14,
+    },
     enableButton: {
-      backgroundColor: colors.primary,
-      paddingVertical: spacing.sm,
-      paddingHorizontal: spacing.lg,
       borderRadius: borderRadius.full,
+      overflow: 'hidden',
+      shadowColor: '#10B981',
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.3,
+      shadowRadius: 8,
+      elevation: 4,
+    },
+    enableButtonGradient: {
+      paddingVertical: spacing.sm + 2,
+      paddingHorizontal: spacing.xl,
     },
     enableButtonText: {
       color: '#fff',
-      fontWeight: '600',
+      fontWeight: '700',
+      fontSize: 15,
     },
   });
 
