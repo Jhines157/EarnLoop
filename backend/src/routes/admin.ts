@@ -4,6 +4,7 @@ import crypto from 'crypto';
 import { Resend } from 'resend';
 import pool from '../db';
 import { createError } from '../middleware/errorHandler';
+import { getCountryFromIP, getTierForCountry } from '../utils/geoPricing';
 
 // Lazy initialize Resend
 let resend: Resend | null = null;
@@ -288,6 +289,92 @@ router.post('/run-migrations', async (req: Request, res: Response, next: NextFun
     results.push('indexes');
 
     res.json({ success: true, data: { message: 'Migrations completed successfully', tables: results } });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Backfill geo-pricing data for existing users
+router.post('/backfill-geo-pricing', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    // Get all users without country data
+    const usersResult = await pool.query(`
+      SELECT u.id, u.email, d.ip_address
+      FROM users u
+      LEFT JOIN devices d ON d.user_id = u.id
+      WHERE u.country_code IS NULL
+      ORDER BY u.created_at DESC
+    `);
+
+    const results: Array<{ email: string; country: string | null; tier: number; ip: string | null }> = [];
+
+    for (const user of usersResult.rows) {
+      let countryCode: string | null = null;
+      let pricingTier = 3;
+
+      if (user.ip_address) {
+        try {
+          countryCode = await getCountryFromIP(user.ip_address);
+          pricingTier = getTierForCountry(countryCode);
+        } catch (err) {
+          console.error(`Failed to get country for ${user.email}:`, err);
+        }
+      }
+
+      // Update user with detected country
+      await pool.query(
+        'UPDATE users SET country_code = $1, pricing_tier = $2 WHERE id = $3',
+        [countryCode, pricingTier, user.id]
+      );
+
+      results.push({
+        email: user.email,
+        country: countryCode,
+        tier: pricingTier,
+        ip: user.ip_address ? user.ip_address.substring(0, 8) + '...' : null,
+      });
+
+      // Small delay to avoid rate limiting from ip-api.com
+      await new Promise(resolve => setTimeout(resolve, 500));
+    }
+
+    res.json({
+      success: true,
+      data: {
+        message: `Backfilled geo data for ${results.length} users`,
+        users: results,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Manually set a user's country/tier
+router.post('/users/:id/set-geo', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { id } = req.params;
+    const { countryCode } = req.body;
+
+    if (!countryCode || countryCode.length !== 2) {
+      return next(createError('Valid 2-letter country code required', 400, 'INVALID_COUNTRY'));
+    }
+
+    const pricingTier = getTierForCountry(countryCode.toUpperCase());
+
+    await pool.query(
+      'UPDATE users SET country_code = $1, pricing_tier = $2 WHERE id = $3',
+      [countryCode.toUpperCase(), pricingTier, id]
+    );
+
+    res.json({
+      success: true,
+      data: {
+        message: 'User geo data updated',
+        countryCode: countryCode.toUpperCase(),
+        pricingTier,
+      },
+    });
   } catch (error) {
     next(error);
   }
