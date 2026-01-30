@@ -23,6 +23,8 @@ interface InventoryItem {
   name: string;
   icon: string;
   itemType: string;
+  category?: string;
+  quantity: number;
   isActive: boolean;
 }
 
@@ -38,6 +40,7 @@ const ProfileScreen = () => {
   const { colors } = useTheme();
   const styles = createStyles(colors);
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
+  const [consumables, setConsumables] = useState<InventoryItem[]>([]);
   const [streakSavers, setStreakSavers] = useState(0);
   const [activeBoost, setActiveBoost] = useState<ActiveBoost | null>(null);
   const [refreshing, setRefreshing] = useState(false);
@@ -53,7 +56,10 @@ const ProfileScreen = () => {
     try {
       const response = await api.getInventory();
       if (response.success && response.data) {
-        setInventory(response.data.inventory || []);
+        const inv = response.data.inventory || [];
+        setInventory(inv);
+        // Filter consumables (streak savers, streak freezes, etc.) with quantity > 0
+        setConsumables(inv.filter((i: InventoryItem) => i.itemType === 'consumable' && i.quantity > 0));
         setStreakSavers(response.data.streakSavers || 0);
         setActiveBoost(response.data.activeXpBoost);
       }
@@ -213,7 +219,7 @@ const ProfileScreen = () => {
         </View>
 
         {/* Active Boosts & Items */}
-        {(activeBoost || streakSavers > 0 || ownedBadges.length > 0) && (
+        {(activeBoost || consumables.length > 0 || ownedBadges.length > 0) && (
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>🎒 Active Items</Text>
             
@@ -233,21 +239,21 @@ const ProfileScreen = () => {
               </View>
             )}
 
-            {/* Streak Savers */}
-            {streakSavers > 0 && (
-              <View style={[styles.activeItem, styles.saverItem]}>
-                <Text style={styles.activeItemIcon}>🛡️</Text>
+            {/* Individual Consumables (Streak Savers, Streak Freezes, etc.) */}
+            {consumables.map((item) => (
+              <View key={item.id} style={[styles.activeItem, styles.saverItem]}>
+                <Text style={styles.activeItemIcon}>{item.icon || '🛡️'}</Text>
                 <View style={styles.activeItemInfo}>
-                  <Text style={styles.activeItemName}>Streak Savers</Text>
+                  <Text style={styles.activeItemName}>{item.name}</Text>
                   <Text style={styles.activeItemDetail}>
                     Auto-protects your streak if you miss a day
                   </Text>
                 </View>
                 <View style={styles.quantityBadge}>
-                  <Text style={styles.quantityText}>×{streakSavers}</Text>
+                  <Text style={styles.quantityText}>×{item.quantity}</Text>
                 </View>
               </View>
-            )}
+            ))}
 
             {/* Owned Badges */}
             {ownedBadges.length > 0 && (

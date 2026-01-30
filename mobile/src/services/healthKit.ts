@@ -1,10 +1,12 @@
-import { Platform } from 'react-native';
+import { Platform, Linking } from 'react-native';
 import {
   isHealthDataAvailable,
   requestAuthorization,
   queryStatisticsForQuantity,
-  HKQuantityTypeIdentifier,
 } from '@kingstinct/react-native-healthkit';
+
+// Use string identifiers as per library v9.0.0+ API
+const STEP_COUNT_IDENTIFIER = 'HKQuantityTypeIdentifierStepCount';
 
 // Step tracking configuration
 export const STEP_CONFIG = {
@@ -19,26 +21,43 @@ class HealthKitService {
   private isInitialized = false;
   private isAvailable = false;
   private hasPermission = false;
+  private lastError: string | null = null;
 
   async initialize(): Promise<boolean> {
     if (Platform.OS !== 'ios') {
       console.log('HealthKit is only available on iOS');
+      this.lastError = 'HealthKit is only available on iOS';
       return false;
     }
 
     try {
       // Check if HealthKit is available on this device
+      console.log('Checking HealthKit availability...');
       const available = await isHealthDataAvailable();
+      console.log('HealthKit available:', available);
+      
       if (!available) {
         console.log('HealthKit not available on this device');
+        this.lastError = 'HealthKit not available on this device';
         this.isAvailable = false;
         return false;
       }
 
       this.isAvailable = true;
 
-      // Request authorization to read step count
-      await requestAuthorization([HKQuantityTypeIdentifier.stepCount]);
+      // Request authorization to read step count using string identifier
+      console.log('Requesting HealthKit authorization for:', STEP_COUNT_IDENTIFIER);
+      try {
+        // The library accepts an object with toRead/toShare arrays of string identifiers
+        await requestAuthorization({
+          toRead: [STEP_COUNT_IDENTIFIER],
+        });
+        console.log('Authorization request completed');
+      } catch (authError: any) {
+        console.log('Authorization request error:', authError);
+        this.lastError = authError?.message || 'Failed to request authorization';
+        // Continue anyway - the permission dialog may still have shown
+      }
 
       // iOS doesn't tell us if permission was actually granted
       // So we try to read steps - if we get a result, we have permission
@@ -47,9 +66,13 @@ class HealthKitService {
       this.isInitialized = hasAccess;
       
       console.log('HealthKit initialized, hasPermission:', hasAccess);
+      if (!hasAccess) {
+        this.lastError = 'Permission not granted - enable in Health app settings';
+      }
       return hasAccess;
-    } catch (error) {
+    } catch (error: any) {
       console.log('HealthKit init error:', error);
+      this.lastError = error?.message || 'Unknown error during initialization';
       return false;
     }
   }
@@ -60,20 +83,55 @@ class HealthKitService {
       const now = new Date();
       const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
 
+      console.log('Checking permission by reading steps...');
+      // Use correct API: identifier, statistics array, options with filter
       const result = await queryStatisticsForQuantity(
-        HKQuantityTypeIdentifier.stepCount,
+        STEP_COUNT_IDENTIFIER as any,
+        ['cumulativeSum'],
         {
-          from: startOfDay,
-          to: now,
+          filter: {
+            date: {
+              startDate: startOfDay,
+              endDate: now,
+            }
+          }
         }
       );
 
+      console.log('Query result:', JSON.stringify(result));
+      
       // If we get here without error, we have permission
       // Note: result might be 0 steps, but that's okay - we have access
       return true;
-    } catch (error) {
+    } catch (error: any) {
       console.log('No HealthKit permission:', error);
+      this.lastError = error?.message || 'Failed to read step data';
       return false;
+    }
+  }
+
+  getLastError(): string | null {
+    return this.lastError;
+  }
+
+  getStatus(): { available: boolean; initialized: boolean; hasPermission: boolean; error: string | null } {
+    return {
+      available: this.isAvailable,
+      initialized: this.isInitialized,
+      hasPermission: this.hasPermission,
+      error: this.lastError,
+    };
+  }
+
+  // Open Health app directly
+  async openHealthApp(): Promise<void> {
+    try {
+      // This opens the Health app's data sources page for the app
+      await Linking.openURL('x-apple-health://');
+    } catch (error) {
+      console.log('Could not open Health app:', error);
+      // Fallback to Settings
+      await Linking.openSettings();
     }
   }
 
@@ -106,14 +164,20 @@ class HealthKitService {
       const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
 
       const result = await queryStatisticsForQuantity(
-        HKQuantityTypeIdentifier.stepCount,
+        STEP_COUNT_IDENTIFIER as any,
+        ['cumulativeSum'],
         {
-          from: startOfDay,
-          to: now,
+          filter: {
+            date: {
+              startDate: startOfDay,
+              endDate: now,
+            }
+          }
         }
       );
 
-      const steps = Math.floor(result?.sumQuantity?.quantity || 0);
+      // The result structure may vary - check for sumQuantity or cumulativeSum
+      const steps = Math.floor(result?.sumQuantity?.quantity || result?.cumulativeSum?.quantity || 0);
       console.log('Today steps:', steps);
       return steps;
     } catch (error) {
@@ -133,14 +197,19 @@ class HealthKitService {
       const endOfDay = new Date(date.getFullYear(), date.getMonth(), date.getDate(), 23, 59, 59);
 
       const result = await queryStatisticsForQuantity(
-        HKQuantityTypeIdentifier.stepCount,
+        STEP_COUNT_IDENTIFIER as any,
+        ['cumulativeSum'],
         {
-          from: startOfDay,
-          to: endOfDay,
+          filter: {
+            date: {
+              startDate: startOfDay,
+              endDate: endOfDay,
+            }
+          }
         }
       );
 
-      return Math.floor(result?.sumQuantity?.quantity || 0);
+      return Math.floor(result?.sumQuantity?.quantity || result?.cumulativeSum?.quantity || 0);
     } catch (error) {
       console.log('Error getting steps for date:', error);
       return 0;

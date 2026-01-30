@@ -39,7 +39,9 @@ interface GiveawayData {
   totalParticipants: number;
   totalEntries: number;
   endsAt: string;
-  userEntries: {
+  bonusEntriesAvailable?: number;
+  bonusRequirements?: string;
+  userEntries?: {
     free: number;
     bonus: number;
     paid: number;
@@ -90,14 +92,16 @@ const RaffleScreen = () => {
       // Fall back to sample data if API fails
       setGiveaways(SAMPLE_GIVEAWAYS.map(g => ({
         id: g.id,
-        name: g.title,
+        name: g.name,
         prizeType: 'credits',
         prizeValue: 500,
-        prizeDescription: g.prize,
+        prizeDescription: g.prizeValue,
         frequency: g.id.includes('weekly') ? 'weekly' : 'monthly',
         totalParticipants: g.totalParticipants,
         totalEntries: g.totalParticipants * 2,
-        endsAt: g.endsIn,
+        endsAt: g.endsAt.toISOString(),
+        bonusEntriesAvailable: g.bonusEntriesAvailable,
+        bonusRequirements: g.bonusRequirements,
         userEntries: { free: 0, bonus: 0, paid: 0, total: 0 },
       })));
     } finally {
@@ -157,6 +161,20 @@ const RaffleScreen = () => {
     
     const { multiplier, winAmount, netResult, isJackpot, newBalance, newPoolTokens, message, jackpotBonus } = response.data;
     
+    // Debug logging
+    console.log('[Jackpot Spin Result]', {
+      bet: jackpotBet,
+      multiplier,
+      winAmount,
+      netResult,
+      isJackpot,
+      previousBalance: balance.tokens,
+      newBalance,
+      previousPool: jackpotPool,
+      newPoolTokens,
+      jackpotBonus,
+    });
+    
     // Update local state with server values
     updateTokens(newBalance);
     setJackpotPool(newPoolTokens);
@@ -174,14 +192,17 @@ const RaffleScreen = () => {
     setLastResult({ multiplier, winnings: winAmount });
     setIsSpinning(false);
     
+    const previousTokens = balance.tokens || 0;
+    const tokenChange = newBalance - previousTokens;
+    
     if (multiplier === 0) {
-      Alert.alert('💔 No Luck', `You lost ${jackpotBet} tokens. Better luck next time!`);
+      Alert.alert('💔 No Luck', `You lost ${jackpotBet} tokens.\n\nBalance: ${newBalance.toLocaleString()} tokens`);
     } else if (multiplier < 1) {
-      Alert.alert('😅 Partial Return', `You got ${winAmount} tokens back (${multiplier}x)`);
+      Alert.alert('😅 Partial Return', `${multiplier}x - Got ${winAmount} tokens back\n\nNet: ${tokenChange >= 0 ? '+' : ''}${tokenChange} tokens\nBalance: ${newBalance.toLocaleString()}`);
     } else if (multiplier === 1) {
-      Alert.alert('😌 Break Even', `You got your ${jackpotBet} tokens back!`);
+      Alert.alert('😌 Break Even', `1x - Got your ${jackpotBet} tokens back!\n\nBalance: ${newBalance.toLocaleString()} tokens`);
     } else {
-      Alert.alert(`🎉 ${multiplier}x WIN!`, `You won ${winAmount} tokens! (+${netResult} profit)`);
+      Alert.alert(`🎉 ${multiplier}x WIN!`, `Won ${winAmount} tokens!\n\nNet profit: +${netResult} tokens\nBalance: ${newBalance.toLocaleString()}`);
     }
   };
 
@@ -236,17 +257,17 @@ const RaffleScreen = () => {
   };
 
   // Claim FREE entry (no purchase necessary - iOS compliant)
-  const handleClaimFreeEntry = async (giveaway: Giveaway) => {
+  const handleClaimFreeEntry = async (giveaway: GiveawayData) => {
     const entries = myEntries[giveaway.id] || { free: false, bonus: 0, paid: 0 };
     
-    if (entries.free) {
+    if (entries.free || giveaway.userEntries?.free) {
       Alert.alert('Already Entered', 'You already have your free entry for this giveaway!');
       return;
     }
 
     Alert.alert(
       'Claim Free Entry',
-      `Get your FREE entry to win ${giveaway.prizeValue}! No purchase necessary.`,
+      `Get your FREE entry to win ${giveaway.prizeDescription}! No purchase necessary.`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -276,10 +297,11 @@ const RaffleScreen = () => {
   };
 
   // Buy extra entries with credits - no limit!
-  const handleBuyEntry = async (giveaway: Giveaway) => {
+  const handleBuyEntry = async (giveaway: GiveawayData) => {
     const entries = myEntries[giveaway.id] || { free: false, bonus: 0, paid: 0 };
+    const hasFreeEntry = entries.free || giveaway.userEntries?.free;
     
-    if (!entries.free) {
+    if (!hasFreeEntry) {
       Alert.alert('Claim Free Entry First', 'Claim your free entry before buying additional entries.');
       return;
     }
@@ -294,7 +316,7 @@ const RaffleScreen = () => {
 
     Alert.alert(
       'Buy Extra Entry',
-      `Spend ${ENTRY_COST} credits for +1 entry to win ${giveaway.prizeValue}?\n\nYour balance: ${balance.current} credits\nYou can buy as many entries as you want!`,
+      `Spend ${ENTRY_COST} credits for +1 entry to win ${giveaway.prizeDescription}?\n\nYour balance: ${balance.current} credits\nYou can buy as many entries as you want!`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -329,15 +351,18 @@ const RaffleScreen = () => {
   };
 
   // Earn bonus entries through engagement (NOT by spending credits)
-  const handleEarnBonusEntry = async (giveaway: Giveaway) => {
+  const handleEarnBonusEntry = async (giveaway: GiveawayData) => {
     const entries = myEntries[giveaway.id] || { free: false, bonus: 0, paid: 0 };
+    const hasFreeEntry = entries.free || giveaway.userEntries?.free;
+    const maxBonusEntries = giveaway.bonusEntriesAvailable || 10;
+    const currentBonusEntries = giveaway.userEntries?.bonus || entries.bonus;
     
-    if (!entries.free) {
+    if (!hasFreeEntry) {
       Alert.alert('Claim Free Entry First', 'You need to claim your free entry before earning bonus entries.');
       return;
     }
 
-    if (entries.bonus >= giveaway.bonusEntriesAvailable) {
+    if (currentBonusEntries >= maxBonusEntries) {
       Alert.alert('Max Bonus Entries', 'You\'ve earned all available bonus entries!');
       return;
     }
@@ -352,9 +377,10 @@ const RaffleScreen = () => {
     }
 
     // For now, simulate earning a bonus entry after watching an ad
+    const bonusReq = giveaway.bonusRequirements || 'Complete daily activities for bonus entries';
     Alert.alert(
       'Earn Bonus Entry',
-      `Complete activities like watching ads or lessons to earn bonus entries. ${giveaway.bonusRequirements}\n\n⏳ After earning, you'll need to wait ${BONUS_COOLDOWN_HOURS} hours for the next one.`,
+      `Complete activities like watching ads or lessons to earn bonus entries. ${bonusReq}\n\n⏳ After earning, you'll need to wait ${BONUS_COOLDOWN_HOURS} hours for the next one.`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -388,15 +414,23 @@ const RaffleScreen = () => {
     );
   };
 
-  const formatTimeLeft = (endDate: Date): string => {
-    const now = new Date();
-    const diff = endDate.getTime() - now.getTime();
-    const days = Math.floor(diff / (1000 * 60 * 60 * 24));
-    const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
-    
-    if (days > 0) return `${days}d ${hours}h left`;
-    if (hours > 0) return `${hours}h left`;
-    return 'Ending soon!';
+  const formatTimeLeft = (endDate: Date | string): string => {
+    try {
+      const now = new Date();
+      const end = typeof endDate === 'string' ? new Date(endDate) : endDate;
+      const diff = end.getTime() - now.getTime();
+      
+      if (isNaN(diff)) return 'Ending soon!';
+      
+      const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+      const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+      
+      if (days > 0) return `${days}d ${hours}h left`;
+      if (hours > 0) return `${hours}h left`;
+      return 'Ending soon!';
+    } catch (e) {
+      return 'Ending soon!';
+    }
   };
 
   const styles = createStyles(colors);
@@ -644,7 +678,7 @@ const RaffleScreen = () => {
               {!entries.free && !giveaway.userEntries?.free ? (
                 <TouchableOpacity
                   style={styles.enterButton}
-                  onPress={() => handleClaimFreeEntry(giveaway as any)}
+                  onPress={() => handleClaimFreeEntry(giveaway)}
                 >
                   <Text style={styles.enterButtonText}>🆓 Claim Free Entry</Text>
                 </TouchableOpacity>
@@ -657,7 +691,7 @@ const RaffleScreen = () => {
                   {/* Buy More Entries with Credits - Unlimited! */}
                   <TouchableOpacity
                     style={[styles.enterButton, styles.buyButton]}
-                    onPress={() => handleBuyEntry(giveaway as any)}
+                    onPress={() => handleBuyEntry(giveaway)}
                   >
                     <Text style={styles.enterButtonText}>
                       💰 Buy Entry ({ENTRY_COST} credits) • {giveaway.userEntries?.paid || entries.paid} bought
@@ -676,14 +710,14 @@ const RaffleScreen = () => {
                   )}
                   
                   {/* Earn Free Bonus Entries */}
-                  {(giveaway.userEntries?.bonus || entries.bonus) < 10 && (
+                  {(giveaway.userEntries?.bonus || entries.bonus) < (giveaway.bonusEntriesAvailable || 10) && (
                     <TouchableOpacity
                       style={[
                         styles.enterButton, 
                         styles.bonusButton,
                         cooldownTimers[giveaway.id] && styles.cooldownButton,
                       ]}
-                      onPress={() => handleEarnBonusEntry(giveaway as any)}
+                      onPress={() => handleEarnBonusEntry(giveaway)}
                       disabled={!!cooldownTimers[giveaway.id]}
                     >
                       <Text style={[
@@ -691,8 +725,8 @@ const RaffleScreen = () => {
                         cooldownTimers[giveaway.id] && styles.cooldownButtonText
                       ]}>
                         {cooldownTimers[giveaway.id] 
-                          ? `⏳ Come Back Soon! (${giveaway.userEntries?.bonus || entries.bonus}/10)` 
-                          : `🎯 Earn Free Bonus (${giveaway.userEntries?.bonus || entries.bonus}/10)`
+                          ? `⏳ Come Back Soon! (${giveaway.userEntries?.bonus || entries.bonus}/${giveaway.bonusEntriesAvailable || 10})` 
+                          : `🎯 Earn Free Bonus (${giveaway.userEntries?.bonus || entries.bonus}/${giveaway.bonusEntriesAvailable || 10})`
                         }
                       </Text>
                     </TouchableOpacity>

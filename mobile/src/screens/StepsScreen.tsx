@@ -147,17 +147,20 @@ const StepsScreen = () => {
       setTodaySteps(steps);
       // Don't show alert, just transition to the steps view automatically
     } else {
-      // If still not ready, open Settings
+      const status = healthKitService.getStatus();
+      // If still not ready, show options
       Alert.alert(
         'Enable HealthKit',
-        'To track your steps, please enable HealthKit access in Settings:\n\n1. Tap "Open Settings"\n2. Go to Health → Data Access\n3. Enable all permissions for EarnLoop',
+        `To track your steps, enable HealthKit access:\n\n1. Open the Health app\n2. Tap your profile icon\n3. Scroll to Apps → EarnLoop\n4. Enable Steps\n\n${status.error ? `Status: ${status.error}` : ''}`,
         [
           { text: 'Cancel', style: 'cancel' },
           {
+            text: 'Open Health App',
+            onPress: () => healthKitService.openHealthApp(),
+          },
+          {
             text: 'Open Settings',
-            onPress: () => {
-              Linking.openURL('app-settings:');
-            },
+            onPress: () => Linking.openURL('app-settings:'),
           },
         ]
       );
@@ -381,6 +384,38 @@ const StepsScreen = () => {
             >
               <Text style={styles.setupButtonText}>🔓 Enable HealthKit</Text>
             </ExpoGradient>
+          </TouchableOpacity>
+          
+          <TouchableOpacity 
+            style={[styles.setupButton, { marginTop: 12 }]} 
+            onPress={async () => {
+              const status = healthKitService.getStatus();
+              const error = healthKitService.getLastError();
+              Alert.alert(
+                'HealthKit Debug Info',
+                `Initialized: ${status.initialized}\nAvailable: ${status.available}\nHas Permission: ${status.hasPermission}\nError: ${error || 'None'}`,
+                [
+                  { text: 'Open Health App', onPress: () => healthKitService.openHealthApp() },
+                  { text: 'Retry Setup', onPress: async () => {
+                    await healthKitService.initialize();
+                    const newReady = healthKitService.isReady();
+                    setHealthKitReady(newReady);
+                    if (newReady) {
+                      const steps = await healthKitService.getTodaySteps();
+                      setTodaySteps(steps);
+                      loadStepData();
+                    } else {
+                      Alert.alert('Still Not Ready', 'HealthKit still not initialized. Error: ' + (healthKitService.getLastError() || 'Unknown'));
+                    }
+                  }},
+                  { text: 'OK' }
+                ]
+              );
+            }}
+          >
+            <View style={[styles.setupButtonGradient, { backgroundColor: colors.card }]}>
+              <Text style={[styles.setupButtonText, { color: colors.text }]}>🔍 Debug Status</Text>
+            </View>
           </TouchableOpacity>
           
           <Text style={styles.setupNote}>

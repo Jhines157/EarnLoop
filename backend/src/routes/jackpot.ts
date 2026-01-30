@@ -143,6 +143,7 @@ router.post('/spin', async (req: AuthRequest, res: Response, next: NextFunction)
       [userId]
     );
     const currentTokens = balanceResult.rows[0]?.tokens || 0;
+    console.log(`[Jackpot] User ${userId} spinning: bet=${betAmount}, currentTokens=${currentTokens}`);
 
     if (currentTokens < betAmount) {
       return next(createError('Insufficient tokens', 400, 'INSUFFICIENT_TOKENS'));
@@ -153,16 +154,19 @@ router.post('/spin', async (req: AuthRequest, res: Response, next: NextFunction)
       'UPDATE balances SET tokens = tokens - $1, updated_at = NOW() WHERE user_id = $2',
       [betAmount, userId]
     );
+    console.log(`[Jackpot] Deducted ${betAmount} from user ${userId}`);
 
     // Determine result
     const multiplier = selectMultiplier();
     const winAmount = Math.floor(betAmount * multiplier);
     const netResult = winAmount - betAmount;
     const isJackpot = multiplier >= 10;
+    console.log(`[Jackpot] Result: multiplier=${multiplier}, winAmount=${winAmount}, netResult=${netResult}, isJackpot=${isJackpot}`);
 
     // If player lost, add portion to jackpot pool
     if (netResult < 0) {
       const contribution = Math.floor(Math.abs(netResult) * JACKPOT_CONFIG.jackpotContribution);
+      console.log(`[Jackpot] Loss detected, contributing ${contribution} to pool (10% of ${Math.abs(netResult)})`);
       await pool.query(`
         UPDATE jackpot_pool 
         SET pool_tokens = pool_tokens + $1, 
@@ -199,6 +203,7 @@ router.post('/spin', async (req: AuthRequest, res: Response, next: NextFunction)
         'UPDATE balances SET tokens = tokens + $1, updated_at = NOW() WHERE user_id = $2',
         [totalWin, userId]
       );
+      console.log(`[Jackpot] Awarded ${totalWin} to user ${userId}`);
     }
 
     // Record spin
@@ -217,6 +222,8 @@ router.post('/spin', async (req: AuthRequest, res: Response, next: NextFunction)
     // Get updated pool
     const newPoolResult = await pool.query('SELECT pool_tokens FROM jackpot_pool LIMIT 1');
     const newPoolTokens = newPoolResult.rows[0]?.pool_tokens || 0;
+    
+    console.log(`[Jackpot] Final: newBalance=${newTokens}, newPool=${newPoolTokens}`);
 
     res.json({
       success: true,
