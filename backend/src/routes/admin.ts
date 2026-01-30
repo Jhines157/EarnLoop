@@ -380,20 +380,20 @@ router.post('/users/:id/set-geo', async (req: Request, res: Response, next: Next
   }
 });
 
-// Bulk fix geo data using activity_logs IPs (more reliable than device IPs)
+// Bulk fix geo data using earn_events IPs (more reliable than device IPs)
 router.post('/fix-geo-from-activity', async (req: Request, res: Response, next: NextFunction) => {
   try {
-    // Get all users and their most recent activity IP
+    // Get all users and their most recent activity IP from earn_events
     const usersResult = await pool.query(`
       SELECT DISTINCT ON (u.id) 
         u.id, 
         u.email, 
         u.country_code,
         u.pricing_tier,
-        a.ip_address
+        e.ip_address
       FROM users u
-      LEFT JOIN activity_logs a ON a.user_id = u.id AND a.ip_address IS NOT NULL
-      ORDER BY u.id, a.created_at DESC
+      LEFT JOIN earn_events e ON e.user_id = u.id AND e.ip_address IS NOT NULL
+      ORDER BY u.id, e.created_at DESC
     `);
 
     const results: Array<{ 
