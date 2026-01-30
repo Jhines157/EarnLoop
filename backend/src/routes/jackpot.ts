@@ -163,36 +163,60 @@ router.post('/spin', async (req: AuthRequest, res: Response, next: NextFunction)
     const isJackpot = multiplier >= 10;
     console.log(`[Jackpot] Result: multiplier=${multiplier}, winAmount=${winAmount}, netResult=${netResult}, isJackpot=${isJackpot}`);
 
-    // If player lost, add portion to jackpot pool
+    // Get current pool
+    const poolResult = await pool.query('SELECT pool_tokens FROM jackpot_pool LIMIT 1');
+    const currentPoolTokens = poolResult.rows[0]?.pool_tokens || 0;
+
+    let poolChange = 0;
+    let jackpotBonus = 0;
+
+    // LOSS: Add 50% of loss to jackpot pool (makes pool grow visibly)
     if (netResult < 0) {
-      const contribution = Math.floor(Math.abs(netResult) * JACKPOT_CONFIG.jackpotContribution);
-      console.log(`[Jackpot] Loss detected, contributing ${contribution} to pool (10% of ${Math.abs(netResult)})`);
+      poolChange = Math.floor(Math.abs(netResult) * 0.5); // 50% of loss goes to pool
+      console.log(`[Jackpot] Loss! Adding ${poolChange} to pool (50% of ${Math.abs(netResult)} loss)`);
       await pool.query(`
         UPDATE jackpot_pool 
         SET pool_tokens = pool_tokens + $1, 
             total_contributed = total_contributed + $1,
             updated_at = NOW()
-      `, [contribution]);
+      `, [poolChange]);
     }
-
-    // If jackpot hit, award bonus from pool
-    let jackpotBonus = 0;
-    if (isJackpot) {
-      const poolResult = await pool.query('SELECT pool_tokens FROM jackpot_pool LIMIT 1');
-      const poolTokens = poolResult.rows[0]?.pool_tokens || 0;
+    // WIN: Take portion from pool as bonus (makes pool shrink on wins)
+    else if (netResult > 0) {
+      // Take 10% of profit from pool as bonus (capped at available pool)
+      const bonusFromPool = Math.min(
+        Math.floor(netResult * 0.1), // 10% of profit
+        Math.floor(currentPoolTokens * 0.05) // Max 5% of pool per win
+      );
       
-      // Award 50% of the pool as bonus
-      jackpotBonus = Math.floor(poolTokens * 0.5);
+      if (bonusFromPool > 0) {
+        jackpotBonus = bonusFromPool;
+        poolChange = -bonusFromPool;
+        console.log(`[Jackpot] Win! Taking ${bonusFromPool} bonus from pool`);
+        await pool.query(`
+          UPDATE jackpot_pool 
+          SET pool_tokens = pool_tokens - $1,
+              total_won = total_won + $1,
+              updated_at = NOW()
+        `, [bonusFromPool]);
+      }
       
-      await pool.query(`
-        UPDATE jackpot_pool 
-        SET pool_tokens = pool_tokens - $1,
-            total_won = total_won + $1,
-            last_jackpot_winner_id = $2,
-            last_jackpot_won_at = NOW(),
-            last_jackpot_amount = $3,
-            updated_at = NOW()
-      `, [jackpotBonus, userId, winAmount + jackpotBonus]);
+      // JACKPOT (10x): Additional 50% of pool as mega bonus!
+      if (isJackpot) {
+        const megaBonus = Math.floor(currentPoolTokens * 0.5);
+        jackpotBonus += megaBonus;
+        poolChange -= megaBonus;
+        console.log(`[Jackpot] JACKPOT HIT! Adding ${megaBonus} mega bonus from pool`);
+        await pool.query(`
+          UPDATE jackpot_pool 
+          SET pool_tokens = GREATEST(0, pool_tokens - $1),
+              total_won = total_won + $1,
+              last_jackpot_winner_id = $2,
+              last_jackpot_won_at = NOW(),
+              last_jackpot_amount = $3,
+              updated_at = NOW()
+        `, [megaBonus, userId, winAmount + jackpotBonus]);
+      }
     }
 
     const totalWin = winAmount + jackpotBonus;

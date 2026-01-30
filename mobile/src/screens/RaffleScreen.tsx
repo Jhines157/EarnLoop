@@ -183,7 +183,7 @@ const RaffleScreen = () => {
       // JACKPOT WIN!
       setLastResult({ multiplier: 10, winnings: winAmount });
       setIsSpinning(false);
-      Alert.alert('🎰 JACKPOT!!! 🎰', `YOU HIT 10x!\n\n+${winAmount.toLocaleString()} TOKENS!${jackpotBonus ? `\n(Includes ${jackpotBonus} bonus from pool!)` : ''}`, [
+      Alert.alert('🎰 JACKPOT!!! 🎰', `YOU HIT 10x!\n\n+${winAmount.toLocaleString()} TOKENS!${jackpotBonus ? `\n(Includes ${jackpotBonus.toLocaleString()} bonus from pool!)` : ''}\n\n🎯 Pool: ${newPoolTokens.toLocaleString()}`, [
         { text: 'Amazing!', style: 'default' }
       ]);
       return;
@@ -193,16 +193,23 @@ const RaffleScreen = () => {
     setIsSpinning(false);
     
     const previousTokens = balance.tokens || 0;
-    const tokenChange = newBalance - previousTokens;
+    const poolDiff = newPoolTokens - jackpotPool;
+    const poolChangeText = poolDiff > 0 
+      ? `📈 Pool +${poolDiff} → ${newPoolTokens.toLocaleString()}`
+      : poolDiff < 0 
+        ? `📉 Pool ${poolDiff} → ${newPoolTokens.toLocaleString()}`
+        : '';
     
     if (multiplier === 0) {
-      Alert.alert('💔 No Luck', `You lost ${jackpotBet} tokens.\n\nBalance: ${newBalance.toLocaleString()} tokens`);
+      Alert.alert('💔 No Luck', `You lost ${jackpotBet} tokens.\n\nBalance: ${newBalance.toLocaleString()}\n${poolChangeText}`);
     } else if (multiplier < 1) {
-      Alert.alert('😅 Partial Return', `${multiplier}x - Got ${winAmount} tokens back\n\nNet: ${tokenChange >= 0 ? '+' : ''}${tokenChange} tokens\nBalance: ${newBalance.toLocaleString()}`);
+      const loss = jackpotBet - winAmount;
+      Alert.alert('😅 Partial Return', `${multiplier}x - Got ${winAmount} back\n\nLost: ${loss} tokens\nBalance: ${newBalance.toLocaleString()}\n${poolChangeText}`);
     } else if (multiplier === 1) {
-      Alert.alert('😌 Break Even', `1x - Got your ${jackpotBet} tokens back!\n\nBalance: ${newBalance.toLocaleString()} tokens`);
+      Alert.alert('😌 Break Even', `1x - Got your ${jackpotBet} tokens back!\n\nBalance: ${newBalance.toLocaleString()}`);
     } else {
-      Alert.alert(`🎉 ${multiplier}x WIN!`, `Won ${winAmount} tokens!\n\nNet profit: +${netResult} tokens\nBalance: ${newBalance.toLocaleString()}`);
+      const bonusText = jackpotBonus ? `\n🎁 +${jackpotBonus} bonus from pool!` : '';
+      Alert.alert(`🎉 ${multiplier}x WIN!`, `Won ${winAmount} tokens!${bonusText}\n\nProfit: +${netResult}\nBalance: ${newBalance.toLocaleString()}\n${poolChangeText}`);
     }
   };
 
