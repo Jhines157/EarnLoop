@@ -383,7 +383,9 @@ router.post('/users/:id/set-geo', async (req: Request, res: Response, next: Next
 // Bulk fix geo data using earn_events IPs (more reliable than device IPs)
 router.post('/fix-geo-from-activity', async (req: Request, res: Response, next: NextFunction) => {
   try {
-    // Get all users and their most recent activity IP from earn_events
+    const limit = parseInt(req.query.limit as string) || 10; // Default to 10 users at a time
+    
+    // Get users without proper geo data and their most recent activity IP from earn_events
     const usersResult = await pool.query(`
       SELECT DISTINCT ON (u.id) 
         u.id, 
@@ -393,8 +395,10 @@ router.post('/fix-geo-from-activity', async (req: Request, res: Response, next: 
         e.ip_address
       FROM users u
       LEFT JOIN earn_events e ON e.user_id = u.id AND e.ip_address IS NOT NULL
+      WHERE u.country_code IS NULL OR u.pricing_tier IS NULL
       ORDER BY u.id, e.created_at DESC
-    `);
+      LIMIT $1
+    `, [limit]);
 
     const results: Array<{ 
       email: string; 
@@ -479,14 +483,20 @@ router.post('/fix-geo-from-activity', async (req: Request, res: Response, next: 
       }
 
       // Small delay to avoid rate limiting from ip-api.com (free tier: 45/min)
-      await new Promise(resolve => setTimeout(resolve, 1500));
+      await new Promise(resolve => setTimeout(resolve, 200));
     }
+
+    // Count remaining users to process
+    const remainingResult = await pool.query(
+      'SELECT COUNT(*) as count FROM users WHERE country_code IS NULL'
+    );
+    const remaining = parseInt(remainingResult.rows[0].count);
 
     res.json({
       success: true,
       data: {
         message: `Geo fix complete: ${updated} updated, ${skipped} skipped, ${failed} failed`,
-        summary: { updated, skipped, failed, total: usersResult.rows.length },
+        summary: { updated, skipped, failed, total: usersResult.rows.length, remaining },
         users: results,
       },
     });
