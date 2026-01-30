@@ -449,14 +449,6 @@ const StepsScreen = () => {
           )}
         </Animated.View>
 
-        {/* Convert Button */}
-        <Animated.View entering={FadeInUp.delay(300)} style={styles.convertSection}>
-          <TouchableOpacity
-            style={[
-              styles.convertButton,
-              adsAvailable <= 0 && styles.convertButtonDisabled,
-            ]}
-            onPress={handleConvertSteps}
         {/* Daily Goals */}
         <Animated.View entering={FadeInUp.delay(400)} style={styles.goalsSection}>
           <Text style={styles.sectionTitle}>🎯 Daily Goals</Text>
