@@ -81,15 +81,25 @@ const StepsScreen = () => {
         const ready = await healthKitService.initialize();
         if (ready) {
           setHealthKitReady(true);
+          // Fetch fresh steps from HealthKit
           const steps = await healthKitService.getTodaySteps();
           setTodaySteps(steps);
+          // Also load step data from server to get conversion state
+          await loadStepData();
         } else {
           // Permission was revoked, clear the flag
           await AsyncStorage.removeItem(HEALTHKIT_ENABLED_KEY);
         }
       } else {
         // Never enabled, try to initialize anyway in case they enabled it in Settings
-        await initializeHealthKit();
+        const ready = await healthKitService.initialize();
+        if (ready) {
+          // User previously granted permission in Settings
+          await AsyncStorage.setItem(HEALTHKIT_ENABLED_KEY, 'true');
+          setHealthKitReady(true);
+          const steps = await healthKitService.getTodaySteps();
+          setTodaySteps(steps);
+        }
       }
     } catch (error) {
       console.error('Error checking persisted HealthKit state:', error);

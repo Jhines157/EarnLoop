@@ -227,6 +227,28 @@ class ApiClient {
     }>('/giveaway/entries');
   }
 
+  async getGiveawayCurrent() {
+    return this.request<{
+      giveaways: Array<{
+        id: string;
+        name: string;
+        prizeType: string;
+        prizeValue: number;
+        prizeDescription: string;
+        frequency: string;
+        totalParticipants: number;
+        totalEntries: number;
+        endsAt: string;
+        userEntries: {
+          free: number;
+          bonus: number;
+          paid: number;
+          total: number;
+        };
+      }>;
+    }>('/giveaway/current');
+  }
+
   async claimFreeEntry(giveawayId: string) {
     return this.request<{
       message: string;

@@ -29,6 +29,24 @@ interface EntryData {
   bonusCooldownRemaining?: number | null;
 }
 
+interface GiveawayData {
+  id: string;
+  name: string;
+  prizeType: string;
+  prizeValue: number;
+  prizeDescription: string;
+  frequency: string;
+  totalParticipants: number;
+  totalEntries: number;
+  endsAt: string;
+  userEntries: {
+    free: number;
+    bonus: number;
+    paid: number;
+    total: number;
+  };
+}
+
 const RaffleScreen = () => {
   const { balance, updateBalance, updateTokens, refreshUser } = useAuth();
   const { colors } = useTheme();
@@ -38,44 +56,65 @@ const RaffleScreen = () => {
   const [refreshing, setRefreshing] = useState(false);
   const [loading, setLoading] = useState(true);
   
+  // Giveaway data from server
+  const [giveaways, setGiveaways] = useState<GiveawayData[]>([]);
+  
   // Jackpot state
   const [jackpotPool, setJackpotPool] = useState(JACKPOT_CONFIG.jackpotPool);
   const [jackpotBet, setJackpotBet] = useState(JACKPOT_CONFIG.minEntry);
   const [isSpinning, setIsSpinning] = useState(false);
   const [lastResult, setLastResult] = useState<{multiplier: number, winnings: number} | null>(null);
-  
-  // Simulated live participants (updates every few seconds)
-  const [liveParticipants, setLiveParticipants] = useState<Record<string, number>>({});
 
   useEffect(() => {
-    loadEntries();
-    // Initialize live participant counts
-    const initialCounts: Record<string, number> = {};
-    SAMPLE_GIVEAWAYS.forEach(g => {
-      initialCounts[g.id] = g.totalParticipants;
-    });
-    setLiveParticipants(initialCounts);
+    loadGiveawayData();
   }, []);
+
+  const loadGiveawayData = async () => {
+    try {
+      setLoading(true);
+      const [entriesRes, currentRes] = await Promise.all([
+        api.getGiveawayEntries(),
+        api.getGiveawayCurrent(),
+      ]);
+      
+      if (entriesRes.success && entriesRes.data) {
+        setMyEntries(entriesRes.data.entries || {});
+      }
+      
+      if (currentRes.success && currentRes.data) {
+        setGiveaways(currentRes.data.giveaways || []);
+      }
+    } catch (error) {
+      console.error('Failed to load giveaway data:', error);
+      // Fall back to sample data if API fails
+      setGiveaways(SAMPLE_GIVEAWAYS.map(g => ({
+        id: g.id,
+        name: g.title,
+        prizeType: 'credits',
+        prizeValue: 500,
+        prizeDescription: g.prize,
+        frequency: g.id.includes('weekly') ? 'weekly' : 'monthly',
+        totalParticipants: g.totalParticipants,
+        totalEntries: g.totalParticipants * 2,
+        endsAt: g.endsIn,
+        userEntries: { free: 0, bonus: 0, paid: 0, total: 0 },
+      })));
+    } finally {
+      setLoading(false);
+    }
+  };
   
-  // Simulate live participant updates
+  // Refresh giveaway data periodically to get updated participant counts
   useEffect(() => {
     const interval = setInterval(() => {
-      setLiveParticipants(prev => {
-        const updated = { ...prev };
-        SAMPLE_GIVEAWAYS.forEach(g => {
-          // Random chance to add 1-3 participants
-          if (Math.random() > 0.7) {
-            updated[g.id] = (updated[g.id] || g.totalParticipants) + Math.floor(Math.random() * 3) + 1;
-          }
-        });
-        return updated;
-      });
+      // Refresh giveaway data every 30 seconds
+      loadGiveawayData();
       
-      // Occasionally increase jackpot pool
+      // Occasionally increase jackpot pool (simulated until backend support)
       if (Math.random() > 0.8) {
         setJackpotPool(prev => prev + Math.floor(Math.random() * 100) + 50);
       }
-    }, 5000);
+    }, 30000);
     
     return () => clearInterval(interval);
   }, []);
@@ -188,22 +227,9 @@ const RaffleScreen = () => {
     return () => clearInterval(interval);
   }, [myEntries]);
 
-  const loadEntries = async () => {
-    try {
-      const response = await api.getGiveawayEntries();
-      if (response.success && response.data) {
-        setMyEntries(response.data.entries || {});
-      }
-    } catch (error) {
-      console.error('Failed to load giveaway entries:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const onRefresh = async () => {
     setRefreshing(true);
-    await loadEntries();
+    await loadGiveawayData();
     await refreshUser();
     setRefreshing(false);
   };
@@ -578,17 +604,20 @@ const RaffleScreen = () => {
         {/* Active Giveaways */}
         <Text style={styles.sectionTitle}>Active Giveaways</Text>
 
-        {SAMPLE_GIVEAWAYS.map((giveaway) => {
+        {giveaways.length === 0 && !loading ? (
+          <View style={styles.emptyState}>
+            <Text style={styles.emptyText}>No active giveaways right now</Text>
+          </View>
+        ) : giveaways.map((giveaway) => {
           const entries = myEntries[giveaway.id] || { free: false, bonus: 0, paid: 0 };
           const totalEntries = (entries.free ? 1 : 0) + entries.bonus + entries.paid;
-          const maxFreeEntries = giveaway.freeEntries + giveaway.bonusEntriesAvailable;
           
           return (
             <View key={giveaway.id} style={styles.raffleCard}>
               <View style={styles.raffleHeader}>
                 <View>
                   <Text style={styles.raffleName}>{giveaway.name}</Text>
-                  <Text style={styles.rafflePrize}>🏆 {giveaway.prizeValue}</Text>
+                  <Text style={styles.rafflePrize}>🏆 {giveaway.prizeDescription}</Text>
                 </View>
                 <View style={styles.timeLeft}>
                   <Text style={styles.timeLeftText}>{formatTimeLeft(giveaway.endsAt)}</Text>
@@ -597,7 +626,7 @@ const RaffleScreen = () => {
 
               <View style={styles.raffleStats}>
                 <View style={styles.stat}>
-                  <Text style={styles.statValue}>{(liveParticipants[giveaway.id] || giveaway.totalParticipants).toLocaleString()}</Text>
+                  <Text style={styles.statValue}>{giveaway.totalParticipants.toLocaleString()}</Text>
                   <Text style={styles.statLabel}>Participants</Text>
                 </View>
                 <View style={styles.stat}>
@@ -605,16 +634,16 @@ const RaffleScreen = () => {
                   <Text style={styles.statLabel}>Credits/Entry</Text>
                 </View>
                 <View style={styles.stat}>
-                  <Text style={styles.statValue}>{totalEntries}</Text>
+                  <Text style={styles.statValue}>{giveaway.userEntries?.total || totalEntries}</Text>
                   <Text style={styles.statLabel}>Your Entries</Text>
                 </View>
               </View>
 
               {/* Free Entry Button */}
-              {!entries.free ? (
+              {!entries.free && !giveaway.userEntries?.free ? (
                 <TouchableOpacity
                   style={styles.enterButton}
-                  onPress={() => handleClaimFreeEntry(giveaway)}
+                  onPress={() => handleClaimFreeEntry(giveaway as any)}
                 >
                   <Text style={styles.enterButtonText}>🆓 Claim Free Entry</Text>
                 </TouchableOpacity>
@@ -627,15 +656,15 @@ const RaffleScreen = () => {
                   {/* Buy More Entries with Credits - Unlimited! */}
                   <TouchableOpacity
                     style={[styles.enterButton, styles.buyButton]}
-                    onPress={() => handleBuyEntry(giveaway)}
+                    onPress={() => handleBuyEntry(giveaway as any)}
                   >
                     <Text style={styles.enterButtonText}>
-                      💰 Buy Entry ({ENTRY_COST} credits) • {entries.paid} bought
+                      💰 Buy Entry ({ENTRY_COST} credits) • {giveaway.userEntries?.paid || entries.paid} bought
                     </Text>
                   </TouchableOpacity>
                   
                   {/* Bonus Entry Timer Banner */}
-                  {entries.bonus < giveaway.bonusEntriesAvailable && cooldownTimers[giveaway.id] && (
+                  {cooldownTimers[giveaway.id] && (
                     <View style={styles.timerBanner}>
                       <Text style={styles.timerIcon}>🎁</Text>
                       <View style={styles.timerContent}>
@@ -646,14 +675,14 @@ const RaffleScreen = () => {
                   )}
                   
                   {/* Earn Free Bonus Entries */}
-                  {entries.bonus < giveaway.bonusEntriesAvailable && (
+                  {(giveaway.userEntries?.bonus || entries.bonus) < 10 && (
                     <TouchableOpacity
                       style={[
                         styles.enterButton, 
                         styles.bonusButton,
                         cooldownTimers[giveaway.id] && styles.cooldownButton,
                       ]}
-                      onPress={() => handleEarnBonusEntry(giveaway)}
+                      onPress={() => handleEarnBonusEntry(giveaway as any)}
                       disabled={!!cooldownTimers[giveaway.id]}
                     >
                       <Text style={[
@@ -661,8 +690,8 @@ const RaffleScreen = () => {
                         cooldownTimers[giveaway.id] && styles.cooldownButtonText
                       ]}>
                         {cooldownTimers[giveaway.id] 
-                          ? `⏳ Come Back Soon! (${entries.bonus}/${giveaway.bonusEntriesAvailable})` 
-                          : `🎯 Earn Free Bonus (${entries.bonus}/${giveaway.bonusEntriesAvailable})`
+                          ? `⏳ Come Back Soon! (${giveaway.userEntries?.bonus || entries.bonus}/10)` 
+                          : `🎯 Earn Free Bonus (${giveaway.userEntries?.bonus || entries.bonus}/10)`
                         }
                       </Text>
                     </TouchableOpacity>
@@ -768,6 +797,18 @@ const createStyles = (colors: any) => StyleSheet.create({
     ...typography.h3,
     color: colors.textPrimary,
     marginBottom: spacing.md,
+  },
+  emptyState: {
+    padding: spacing.xl,
+    alignItems: 'center',
+    backgroundColor: colors.backgroundCard,
+    borderRadius: borderRadius.lg,
+    marginBottom: spacing.md,
+  },
+  emptyText: {
+    ...typography.body,
+    color: colors.textSecondary,
+    textAlign: 'center',
   },
   raffleCard: {
     backgroundColor: colors.backgroundCard,

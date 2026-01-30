@@ -358,6 +358,7 @@ router.get('/inventory', async (req: AuthRequest, res: Response, next: NextFunct
       FROM user_inventory ui
       JOIN store_items si ON ui.item_id = si.id
       WHERE ui.user_id = $1
+        AND si.is_active = true
       ORDER BY ui.created_at DESC
     `, [userId]);
 
