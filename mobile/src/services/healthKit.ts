@@ -18,6 +18,7 @@ export const STEP_CONFIG = {
 class HealthKitService {
   private isInitialized = false;
   private isAvailable = false;
+  private hasPermission = false;
 
   async initialize(): Promise<boolean> {
     if (Platform.OS !== 'ios') {
@@ -39,17 +40,57 @@ class HealthKitService {
       // Request authorization to read step count
       await requestAuthorization([HKQuantityTypeIdentifier.stepCount]);
 
-      this.isInitialized = true;
-      console.log('HealthKit initialized successfully');
-      return true;
+      // iOS doesn't tell us if permission was actually granted
+      // So we try to read steps - if we get a result, we have permission
+      const hasAccess = await this.checkActualPermission();
+      this.hasPermission = hasAccess;
+      this.isInitialized = hasAccess;
+      
+      console.log('HealthKit initialized, hasPermission:', hasAccess);
+      return hasAccess;
     } catch (error) {
       console.log('HealthKit init error:', error);
       return false;
     }
   }
 
+  // Actually try to read steps to check if we have permission
+  async checkActualPermission(): Promise<boolean> {
+    try {
+      const now = new Date();
+      const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+      const result = await queryStatisticsForQuantity(
+        HKQuantityTypeIdentifier.stepCount,
+        {
+          from: startOfDay,
+          to: now,
+        }
+      );
+
+      // If we get here without error, we have permission
+      // Note: result might be 0 steps, but that's okay - we have access
+      return true;
+    } catch (error) {
+      console.log('No HealthKit permission:', error);
+      return false;
+    }
+  }
+
   isReady(): boolean {
-    return this.isInitialized && this.isAvailable;
+    return this.isInitialized && this.isAvailable && this.hasPermission;
+  }
+
+  // Re-check permission status (call after user returns from Settings)
+  async recheckPermission(): Promise<boolean> {
+    if (!this.isAvailable) {
+      return false;
+    }
+    
+    const hasAccess = await this.checkActualPermission();
+    this.hasPermission = hasAccess;
+    this.isInitialized = hasAccess;
+    return hasAccess;
   }
 
   // Get today's step count

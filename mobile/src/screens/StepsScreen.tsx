@@ -68,6 +68,22 @@ const StepsScreen = () => {
     loadStepData();
   }, []);
 
+  // Re-check HealthKit when app comes to foreground
+  useEffect(() => {
+    const interval = setInterval(async () => {
+      if (!healthKitReady) {
+        const ready = await healthKitService.recheckPermission();
+        if (ready) {
+          setHealthKitReady(true);
+          const steps = await healthKitService.getTodaySteps();
+          setTodaySteps(steps);
+        }
+      }
+    }, 3000); // Check every 3 seconds when not ready
+    
+    return () => clearInterval(interval);
+  }, [healthKitReady]);
+
   const initializeHealthKit = async () => {
     const ready = await healthKitService.initialize();
     setHealthKitReady(ready);
@@ -267,6 +283,58 @@ const StepsScreen = () => {
   // Daily goals with checkmarks
   const dailyGoals = healthKitService.getDailyGoals();
 
+  // If HealthKit not ready, show setup screen
+  if (!healthKitReady) {
+    return (
+      <SafeAreaView style={styles.container} edges={['bottom']}>
+        <ScrollView
+          contentContainerStyle={styles.setupContent}
+          refreshControl={
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />
+          }
+        >
+          <View style={styles.setupIconContainer}>
+            <Text style={styles.setupIcon}>🚶‍♂️</Text>
+          </View>
+          <Text style={styles.setupTitle}>Enable Step Tracking</Text>
+          <Text style={styles.setupSubtitle}>
+            Walk your way to rewards! Connect HealthKit to convert your daily steps into credits.
+          </Text>
+          
+          <View style={styles.setupSteps}>
+            <View style={styles.setupStepItem}>
+              <View style={styles.setupStepNumber}><Text style={styles.setupStepNumberText}>1</Text></View>
+              <Text style={styles.setupStepText}>Tap "Enable HealthKit" below</Text>
+            </View>
+            <View style={styles.setupStepItem}>
+              <View style={styles.setupStepNumber}><Text style={styles.setupStepNumberText}>2</Text></View>
+              <Text style={styles.setupStepText}>Allow EarnLoop to read Steps</Text>
+            </View>
+            <View style={styles.setupStepItem}>
+              <View style={styles.setupStepNumber}><Text style={styles.setupStepNumberText}>3</Text></View>
+              <Text style={styles.setupStepText}>Walk and earn up to 300 credits daily!</Text>
+            </View>
+          </View>
+
+          <TouchableOpacity style={styles.setupButton} onPress={openHealthKitSettings}>
+            <ExpoGradient
+              colors={['#10B981', '#059669']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.setupButtonGradient}
+            >
+              <Text style={styles.setupButtonText}>🔓 Enable HealthKit</Text>
+            </ExpoGradient>
+          </TouchableOpacity>
+          
+          <Text style={styles.setupNote}>
+            Your step data stays on your device. We only track totals for rewards.
+          </Text>
+        </ScrollView>
+      </SafeAreaView>
+    );
+  }
+
   return (
     <SafeAreaView style={styles.container} edges={['bottom']}>
       <ScrollView
@@ -328,45 +396,57 @@ const StepsScreen = () => {
               </G>
             </Svg>
             
-            {/* Milestone markers positioned around ring */}
-            {[5000, 10000, 15000, 20000, 25000, 30000].map((milestone) => {
-              const progress = milestone / STEP_CONFIG.MAX_DAILY_STEPS;
-              const angleRad = (progress * 2 * Math.PI) - (Math.PI / 2); // Start from top
-              const markerRadius = RING_SIZE / 2 + 25; // Outside the ring
-              const x = RING_SIZE / 2 + Math.cos(angleRad) * markerRadius;
-              const y = RING_SIZE / 2 + Math.sin(angleRad) * markerRadius;
-              const reached = todaySteps >= milestone;
-              
-              return (
-                <View
-                  key={milestone}
-                  style={[
-                    styles.milestoneMarker,
-                    {
-                      left: x - 18,
-                      top: y - 12,
-                    },
-                  ]}
-                >
-                  <View style={[styles.milestoneBadge, reached && styles.milestoneBadgeReached]}>
-                    <Text style={[styles.milestoneText, reached && styles.milestoneTextReached]}>
-                      {reached ? '✓' : `${milestone / 1000}k`}
-                    </Text>
-                  </View>
-                </View>
-              );
-            })}
-          </View>
-          
-          {/* Center content */}
-          <View style={styles.ringCenter}>
-            <Text style={styles.stepsEmoji}>👟</Text>
-            <Text style={styles.stepCount}>{todaySteps.toLocaleString()}</Text>
-            <Text style={styles.stepLabel}>steps today</Text>
-            <View style={styles.goalBadge}>
-              <Text style={styles.goalBadgeText}>Goal: {(STEP_CONFIG.MAX_DAILY_STEPS / 1000).toFixed(0)}k</Text>
+            {/* Center content */}
+            <View style={styles.ringCenter}>
+              <Text style={styles.stepCount}>{todaySteps.toLocaleString()}</Text>
+              <Text style={styles.stepLabel}>steps today</Text>
+              <Text style={styles.goalText}>Goal: {(STEP_CONFIG.MAX_DAILY_STEPS / 1000).toFixed(0)}k</Text>
             </View>
           </View>
+        </Animated.View>
+
+        {/* Convert Button - Main CTA */}
+        <Animated.View entering={FadeInUp.delay(300)} style={styles.convertSection}>
+          {adsAvailable > 0 ? (
+            <>
+              <View style={styles.adsAvailableBadge}>
+                <Text style={styles.adsAvailableText}>
+                  🎬 {adsAvailable} {adsAvailable === 1 ? 'ad' : 'ads'} available from your steps!
+                </Text>
+              </View>
+              <TouchableOpacity
+                style={styles.convertButton}
+                onPress={handleConvertSteps}
+                disabled={converting}
+              >
+                <ExpoGradient
+                  colors={['#10B981', '#059669']}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={styles.convertButtonGradient}
+                >
+                  <Text style={styles.convertButtonEmoji}>🎬</Text>
+                  <Text style={styles.convertButtonText}>
+                    {converting ? 'Loading Ad...' : `Watch Ad → +${STEP_CONFIG.CREDITS_PER_AD} Credits`}
+                  </Text>
+                </ExpoGradient>
+              </TouchableOpacity>
+              <Text style={styles.convertHint}>
+                Convert {STEP_CONFIG.STEPS_PER_AD.toLocaleString()} steps per ad watched
+              </Text>
+            </>
+          ) : (
+            <View style={styles.noAdsContainer}>
+              <Text style={styles.noAdsIcon}>🚶</Text>
+              <Text style={styles.noAdsTitle}>Keep Walking!</Text>
+              <Text style={styles.noAdsText}>
+                {stepsToNextAd.toLocaleString()} more steps until your next ad
+              </Text>
+              <View style={styles.nextAdProgress}>
+                <View style={[styles.nextAdProgressBar, { width: `${milestoneProgress.progress * 100}%` }]} />
+              </View>
+            </View>
+          )}
         </Animated.View>
 
         {/* Convert Button */}
@@ -377,31 +457,6 @@ const StepsScreen = () => {
               adsAvailable <= 0 && styles.convertButtonDisabled,
             ]}
             onPress={handleConvertSteps}
-            disabled={converting || adsAvailable <= 0}
-          >
-            <ExpoGradient
-              colors={adsAvailable > 0 ? ['#10B981', '#059669'] : [colors.backgroundCard, colors.backgroundCard]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={styles.convertButtonGradient}
-            >
-              <Text style={[styles.convertButtonText, adsAvailable <= 0 && { color: colors.textSecondary }]}>
-                {converting ? '⏳ Loading...' : adsAvailable > 0 
-                  ? `👟 Convert Steps → +${creditsAvailable} credits` 
-                  : `🚶 Walk ${stepsToNextAd.toLocaleString()} more steps`}
-              </Text>
-            </ExpoGradient>
-          </TouchableOpacity>
-          
-          {adsAvailable > 0 && (
-            <View style={styles.convertInfo}>
-              <Text style={styles.convertInfoText}>
-                🎬 {adsAvailable} {adsAvailable === 1 ? 'ad' : 'ads'} ready to convert
-              </Text>
-            </View>
-          )}
-        </Animated.View>
-
         {/* Daily Goals */}
         <Animated.View entering={FadeInUp.delay(400)} style={styles.goalsSection}>
           <Text style={styles.sectionTitle}>🎯 Daily Goals</Text>
@@ -411,9 +466,7 @@ const StepsScreen = () => {
               const progress = Math.min(1, todaySteps / goal.goal);
               return (
                 <View key={goal.goal} style={[styles.goalItem, reached && styles.goalItemReached]}>
-                  <View style={styles.goalIconContainer}>
-                    <Text style={styles.goalIcon}>{reached ? '✅' : '🎯'}</Text>
-                  </View>
+                  <Text style={styles.goalIcon}>{reached ? '✅' : '🎯'}</Text>
                   <Text style={[styles.goalSteps, reached && styles.goalTextReached]}>
                     {(goal.goal / 1000).toFixed(0)}k
                   </Text>
@@ -447,29 +500,6 @@ const StepsScreen = () => {
             💡 Convert at least 1 ad from steps daily to maintain your streak!
           </Text>
         </Animated.View>
-
-        {/* HealthKit Status */}
-        {!healthKitReady && (
-          <Animated.View entering={FadeIn.delay(600)} style={styles.healthKitWarning}>
-            <View style={styles.warningHeader}>
-              <Text style={styles.warningIcon}>⚠️</Text>
-              <Text style={styles.warningTitle}>HealthKit Not Connected</Text>
-            </View>
-            <Text style={styles.warningText}>
-              Enable HealthKit to start tracking your steps and earning credits!
-            </Text>
-            <TouchableOpacity style={styles.enableButton} onPress={openHealthKitSettings}>
-              <ExpoGradient
-                colors={['#10B981', '#059669']}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                style={styles.enableButtonGradient}
-              >
-                <Text style={styles.enableButtonText}>🔓 Enable HealthKit</Text>
-              </ExpoGradient>
-            </TouchableOpacity>
-          </Animated.View>
-        )}
       </ScrollView>
     </SafeAreaView>
   );
@@ -485,6 +515,98 @@ const createStyles = (colors: any) =>
       padding: spacing.md,
       paddingBottom: 100,
     },
+    // Setup screen styles
+    setupContent: {
+      flex: 1,
+      padding: spacing.xl,
+      alignItems: 'center',
+      justifyContent: 'center',
+      minHeight: 600,
+    },
+    setupIconContainer: {
+      width: 120,
+      height: 120,
+      borderRadius: 60,
+      backgroundColor: '#10B98120',
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginBottom: spacing.xl,
+    },
+    setupIcon: {
+      fontSize: 60,
+    },
+    setupTitle: {
+      fontSize: 28,
+      fontWeight: '800',
+      color: colors.textPrimary,
+      textAlign: 'center',
+      marginBottom: spacing.sm,
+    },
+    setupSubtitle: {
+      fontSize: 16,
+      color: colors.textSecondary,
+      textAlign: 'center',
+      marginBottom: spacing.xl,
+      paddingHorizontal: spacing.md,
+      lineHeight: 24,
+    },
+    setupSteps: {
+      width: '100%',
+      marginBottom: spacing.xl,
+    },
+    setupStepItem: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      marginBottom: spacing.md,
+      backgroundColor: colors.backgroundCard,
+      padding: spacing.md,
+      borderRadius: borderRadius.lg,
+    },
+    setupStepNumber: {
+      width: 32,
+      height: 32,
+      borderRadius: 16,
+      backgroundColor: '#10B981',
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginRight: spacing.md,
+    },
+    setupStepNumberText: {
+      color: '#fff',
+      fontWeight: '700',
+      fontSize: 16,
+    },
+    setupStepText: {
+      flex: 1,
+      fontSize: 15,
+      color: colors.textPrimary,
+    },
+    setupButton: {
+      borderRadius: borderRadius.full,
+      overflow: 'hidden',
+      shadowColor: '#10B981',
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.3,
+      shadowRadius: 8,
+      elevation: 4,
+      marginBottom: spacing.lg,
+    },
+    setupButtonGradient: {
+      paddingVertical: spacing.md,
+      paddingHorizontal: spacing.xl * 2,
+    },
+    setupButtonText: {
+      color: '#fff',
+      fontSize: 18,
+      fontWeight: '700',
+    },
+    setupNote: {
+      fontSize: 12,
+      color: colors.textSecondary,
+      textAlign: 'center',
+      paddingHorizontal: spacing.lg,
+    },
+    // Main screen styles
     headerStats: {
       flexDirection: 'row',
       justifyContent: 'space-around',
@@ -503,19 +625,17 @@ const createStyles = (colors: any) =>
     },
     statLabel: {
       fontSize: 11,
-      color: colors.textPrimarySecondary,
+      color: colors.textSecondary,
       marginTop: 4,
     },
     ringContainer: {
       alignItems: 'center',
       justifyContent: 'center',
-      marginBottom: spacing.xl,
-      paddingVertical: spacing.lg,
+      marginBottom: spacing.lg,
     },
     ringWrapper: {
-      position: 'relative',
-      width: RING_SIZE + 60,
-      height: RING_SIZE + 60,
+      width: RING_SIZE,
+      height: RING_SIZE,
       alignItems: 'center',
       justifyContent: 'center',
     },
@@ -524,97 +644,104 @@ const createStyles = (colors: any) =>
       alignItems: 'center',
       justifyContent: 'center',
     },
-    stepsEmoji: {
-      fontSize: 28,
-      marginBottom: 4,
-    },
     stepCount: {
-      fontSize: 44,
+      fontSize: 48,
       fontWeight: '800',
       color: colors.textPrimary,
       letterSpacing: -1,
     },
     stepLabel: {
       fontSize: 14,
-      color: colors.textPrimarySecondary,
+      color: colors.textSecondary,
       marginTop: 2,
     },
-    goalBadge: {
+    goalText: {
+      fontSize: 13,
+      color: colors.textSecondary,
       marginTop: 8,
-      backgroundColor: colors.backgroundCard,
-      paddingHorizontal: 12,
-      paddingVertical: 4,
-      borderRadius: borderRadius.full,
-    },
-    goalBadgeText: {
-      fontSize: 12,
-      color: colors.textPrimarySecondary,
-      fontWeight: '600',
-    },
-    milestoneMarker: {
-      position: 'absolute',
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
-    milestoneBadge: {
-      backgroundColor: colors.backgroundCard,
-      paddingHorizontal: 8,
-      paddingVertical: 4,
-      borderRadius: borderRadius.full,
-      borderWidth: 1,
-      borderColor: colors.border,
-    },
-    milestoneBadgeReached: {
-      backgroundColor: '#10B98120',
-      borderColor: '#10B981',
-    },
-    milestoneText: {
-      fontSize: 10,
-      color: colors.textPrimarySecondary,
-      fontWeight: '700',
-    },
-    milestoneTextReached: {
-      color: '#10B981',
     },
     convertSection: {
       alignItems: 'center',
       marginBottom: spacing.xl,
+      paddingHorizontal: spacing.sm,
+    },
+    adsAvailableBadge: {
+      backgroundColor: '#10B98120',
+      paddingHorizontal: spacing.md,
+      paddingVertical: spacing.sm,
+      borderRadius: borderRadius.full,
+      marginBottom: spacing.md,
+    },
+    adsAvailableText: {
+      color: '#10B981',
+      fontWeight: '600',
+      fontSize: 14,
     },
     convertButton: {
       borderRadius: borderRadius.full,
       overflow: 'hidden',
-      minWidth: '90%',
       shadowColor: '#10B981',
       shadowOffset: { width: 0, height: 4 },
       shadowOpacity: 0.3,
       shadowRadius: 8,
       elevation: 4,
+      width: '100%',
     },
     convertButtonGradient: {
-      paddingVertical: spacing.md + 2,
+      paddingVertical: spacing.md + 4,
       paddingHorizontal: spacing.xl,
       alignItems: 'center',
       justifyContent: 'center',
+      flexDirection: 'row',
     },
-    convertButtonDisabled: {
-      shadowOpacity: 0,
+    convertButtonEmoji: {
+      fontSize: 20,
+      marginRight: spacing.sm,
     },
     convertButtonText: {
       color: '#fff',
-      fontSize: 16,
+      fontSize: 17,
       fontWeight: '700',
     },
-    convertInfo: {
-      marginTop: spacing.sm,
-      backgroundColor: colors.backgroundCard,
-      paddingHorizontal: 12,
-      paddingVertical: 6,
-      borderRadius: borderRadius.full,
-    },
-    convertInfoText: {
+    convertHint: {
       fontSize: 12,
-      color: colors.textPrimarySecondary,
-      fontWeight: '500',
+      color: colors.textSecondary,
+      marginTop: spacing.sm,
+      textAlign: 'center',
+    },
+    noAdsContainer: {
+      backgroundColor: colors.backgroundCard,
+      borderRadius: borderRadius.xl,
+      padding: spacing.xl,
+      alignItems: 'center',
+      width: '100%',
+    },
+    noAdsIcon: {
+      fontSize: 48,
+      marginBottom: spacing.sm,
+    },
+    noAdsTitle: {
+      fontSize: 20,
+      fontWeight: '700',
+      color: colors.textPrimary,
+      marginBottom: spacing.xs,
+    },
+    noAdsText: {
+      fontSize: 14,
+      color: colors.textSecondary,
+      marginBottom: spacing.md,
+    },
+    nextAdProgress: {
+      width: '80%',
+      height: 8,
+      backgroundColor: colors.border,
+      borderRadius: 4,
+      overflow: 'hidden',
+    },
+    nextAdProgressBar: {
+      height: '100%',
+      backgroundColor: '#10B981',
+      borderRadius: 4,
     },
     goalsSection: {
       marginBottom: spacing.xl,
@@ -643,11 +770,9 @@ const createStyles = (colors: any) =>
       borderWidth: 1.5,
       borderColor: '#10B981',
     },
-    goalIconContainer: {
-      marginBottom: 4,
-    },
     goalIcon: {
       fontSize: 16,
+      marginBottom: 4,
     },
     goalProgress: {
       width: '100%',
@@ -669,7 +794,7 @@ const createStyles = (colors: any) =>
     },
     goalReward: {
       fontSize: 10,
-      color: colors.textPrimarySecondary,
+      color: colors.textSecondary,
       marginTop: 2,
     },
     goalTextReached: {
@@ -696,7 +821,7 @@ const createStyles = (colors: any) =>
     },
     streakLabel: {
       fontSize: 12,
-      color: colors.textPrimarySecondary,
+      color: colors.textSecondary,
       marginTop: 4,
     },
     streakDivider: {
@@ -707,58 +832,12 @@ const createStyles = (colors: any) =>
     },
     streakHint: {
       fontSize: 12,
-      color: colors.textPrimarySecondary,
+      color: colors.textSecondary,
       textAlign: 'center',
       marginTop: spacing.md,
       backgroundColor: colors.backgroundCard,
       padding: spacing.sm,
       borderRadius: borderRadius.md,
-    },
-    healthKitWarning: {
-      backgroundColor: '#F59E0B15',
-      padding: spacing.lg,
-      borderRadius: borderRadius.lg,
-      alignItems: 'center',
-      borderWidth: 1,
-      borderColor: '#F59E0B40',
-    },
-    warningHeader: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      marginBottom: spacing.sm,
-    },
-    warningIcon: {
-      fontSize: 20,
-      marginRight: 8,
-    },
-    warningTitle: {
-      fontSize: 16,
-      fontWeight: '700',
-      color: '#F59E0B',
-    },
-    warningText: {
-      color: colors.textPrimarySecondary,
-      textAlign: 'center',
-      marginBottom: spacing.md,
-      fontSize: 14,
-    },
-    enableButton: {
-      borderRadius: borderRadius.full,
-      overflow: 'hidden',
-      shadowColor: '#10B981',
-      shadowOffset: { width: 0, height: 4 },
-      shadowOpacity: 0.3,
-      shadowRadius: 8,
-      elevation: 4,
-    },
-    enableButtonGradient: {
-      paddingVertical: spacing.sm + 2,
-      paddingHorizontal: spacing.xl,
-    },
-    enableButtonText: {
-      color: '#fff',
-      fontWeight: '700',
-      fontSize: 15,
     },
   });
 
