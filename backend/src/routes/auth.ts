@@ -107,7 +107,7 @@ router.post('/login', async (req: Request, res: Response, next: NextFunction) =>
 
     // Find user
     const userResult = await pool.query(
-      'SELECT id, email, password_hash, is_banned, ban_reason FROM users WHERE email = $1',
+      'SELECT id, email, password_hash, is_banned, ban_reason, country_code FROM users WHERE email = $1',
       [email.toLowerCase()]
     );
 
@@ -126,6 +126,24 @@ router.post('/login', async (req: Request, res: Response, next: NextFunction) =>
     const isValidPassword = await bcrypt.compare(password, user.password_hash);
     if (!isValidPassword) {
       return next(createError('Invalid email or password', 401, 'INVALID_CREDENTIALS'));
+    }
+
+    // Auto-detect country on login if not set (for existing users)
+    if (!user.country_code) {
+      try {
+        const clientIP = (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() || req.ip || '';
+        const countryCode = await getCountryFromIP(clientIP);
+        if (countryCode) {
+          const pricingTier = getTierForCountry(countryCode);
+          await pool.query(
+            'UPDATE users SET country_code = $1, pricing_tier = $2 WHERE id = $3',
+            [countryCode, pricingTier, user.id]
+          );
+          console.log(`📍 Backfilled geo for ${user.email}: ${countryCode} (Tier ${pricingTier})`);
+        }
+      } catch (err) {
+        console.error('Failed to backfill country on login:', err);
+      }
     }
 
     // Handle device
