@@ -34,6 +34,7 @@ interface StoreItem {
   canAfford: boolean;
   canRedeem: boolean;
   isGeoPriced?: boolean;
+  hasMultiplier?: boolean;
 }
 
 interface PricingTier {
@@ -358,14 +359,20 @@ const RewardsScreen = () => {
           )}
         </View>
 
-        {/* Regional Pricing Info (only show if user has geo-pricing) */}
-        {pricingTier && pricingTier.multiplier > 1 && (
+        {/* Regional Pricing Info (show for all users viewing gift cards) */}
+        {selectedCategory === 'giftcards' && pricingTier && (
           <View style={styles.regionalBanner}>
             <Text style={styles.regionalIcon}>🌍</Text>
             <View style={styles.regionalTextContainer}>
-              <Text style={styles.regionalTitle}>Regional Pricing Active</Text>
+              <Text style={styles.regionalTitle}>
+                {pricingTier.multiplier === 1 
+                  ? 'Standard Regional Pricing' 
+                  : 'Regional Pricing Active'}
+              </Text>
               <Text style={styles.regionalSubtext}>
-                Gift card prices are adjusted for your region to ensure fair rewards based on local ad rates.
+                {pricingTier.multiplier === 1 
+                  ? `You're in a Tier 1 region. Gift cards cost the base rate.`
+                  : `Tier ${pricingTier.tier}: Prices adjusted ${pricingTier.multiplier}x for your region based on local ad rates.`}
               </Text>
             </View>
           </View>

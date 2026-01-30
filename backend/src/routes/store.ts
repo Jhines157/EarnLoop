@@ -73,7 +73,8 @@ router.get('/items', async (req: AuthRequest, res: Response, next: NextFunction)
         ownedQuantity: parseInt(item.owned_quantity),
         canAfford: balance >= adjustedCost,
         canRedeem: item.max_per_user === null || parseInt(item.user_redemptions) < item.max_per_user,
-        isGeoPriced: isGiftCard && tierInfo.multiplier > 1,
+        isGeoPriced: isGiftCard, // All gift cards are geo-priced
+        hasMultiplier: isGiftCard && tierInfo.multiplier > 1, // Shows if price is increased
       });
     });
 

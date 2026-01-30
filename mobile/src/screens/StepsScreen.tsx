@@ -16,6 +16,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import Svg, { Circle, G, Defs, LinearGradient, Stop } from 'react-native-svg';
 import Animated, { FadeInDown, FadeInUp, FadeIn } from 'react-native-reanimated';
 import { LinearGradient as ExpoGradient } from 'expo-linear-gradient';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
@@ -40,11 +41,14 @@ interface StepData {
   lastStepDate: string | null;
 }
 
+const HEALTHKIT_ENABLED_KEY = '@earnloop_healthkit_enabled';
+
 const StepsScreen = () => {
   const { colors } = useTheme();
   const { balance, updateBalance } = useAuth();
   
   const [healthKitReady, setHealthKitReady] = useState(false);
+  const [checkingHealthKit, setCheckingHealthKit] = useState(true);
   const [todaySteps, setTodaySteps] = useState(0);
   const [stepData, setStepData] = useState<StepData>({
     todaySteps: 0,
@@ -64,9 +68,36 @@ const StepsScreen = () => {
   const [sessionCreditsEarned, setSessionCreditsEarned] = useState(0);
 
   useEffect(() => {
-    initializeHealthKit();
+    checkPersistedHealthKit();
     loadStepData();
   }, []);
+
+  // Check if HealthKit was previously enabled
+  const checkPersistedHealthKit = async () => {
+    try {
+      const wasEnabled = await AsyncStorage.getItem(HEALTHKIT_ENABLED_KEY);
+      if (wasEnabled === 'true') {
+        // Previously enabled, verify it still works
+        const ready = await healthKitService.initialize();
+        if (ready) {
+          setHealthKitReady(true);
+          const steps = await healthKitService.getTodaySteps();
+          setTodaySteps(steps);
+        } else {
+          // Permission was revoked, clear the flag
+          await AsyncStorage.removeItem(HEALTHKIT_ENABLED_KEY);
+        }
+      } else {
+        // Never enabled, try to initialize anyway in case they enabled it in Settings
+        await initializeHealthKit();
+      }
+    } catch (error) {
+      console.error('Error checking persisted HealthKit state:', error);
+      await initializeHealthKit();
+    } finally {
+      setCheckingHealthKit(false);
+    }
+  };
 
   // Re-check HealthKit when app comes to foreground
   useEffect(() => {
@@ -88,6 +119,8 @@ const StepsScreen = () => {
     const ready = await healthKitService.initialize();
     setHealthKitReady(ready);
     if (ready) {
+      // Persist that HealthKit is enabled
+      await AsyncStorage.setItem(HEALTHKIT_ENABLED_KEY, 'true');
       const steps = await healthKitService.getTodaySteps();
       setTodaySteps(steps);
     }
@@ -98,9 +131,11 @@ const StepsScreen = () => {
     const ready = await healthKitService.initialize();
     if (ready) {
       setHealthKitReady(true);
+      // Persist that HealthKit is enabled
+      await AsyncStorage.setItem(HEALTHKIT_ENABLED_KEY, 'true');
       const steps = await healthKitService.getTodaySteps();
       setTodaySteps(steps);
-      Alert.alert('Success! 🎉', 'HealthKit is now connected. Start walking to earn credits!');
+      // Don't show alert, just transition to the steps view automatically
     } else {
       // If still not ready, open Settings
       Alert.alert(
@@ -283,6 +318,17 @@ const StepsScreen = () => {
   // Daily goals with checkmarks
   const dailyGoals = healthKitService.getDailyGoals();
 
+  // Show loading while checking HealthKit state
+  if (checkingHealthKit) {
+    return (
+      <SafeAreaView style={styles.container} edges={['bottom']}>
+        <View style={styles.loadingContainer}>
+          <Text style={styles.loadingText}>🚶 Loading...</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
   // If HealthKit not ready, show setup screen
   if (!healthKitReady) {
     return (
@@ -409,11 +455,34 @@ const StepsScreen = () => {
         <Animated.View entering={FadeInUp.delay(300)} style={styles.convertSection}>
           {adsAvailable > 0 ? (
             <>
-              <View style={styles.adsAvailableBadge}>
-                <Text style={styles.adsAvailableText}>
-                  🎬 {adsAvailable} {adsAvailable === 1 ? 'ad' : 'ads'} available from your steps!
-                </Text>
+              <Text style={styles.sectionTitle}>🎬 Convert Your Steps</Text>
+              <Text style={styles.convertSubtitle}>
+                Each 1,000 steps = 1 ad = 10 credits
+              </Text>
+              
+              {/* Step Milestones Grid */}
+              <View style={styles.milestonesGrid}>
+                {Array.from({ length: Math.min(adsAvailable, 10) }, (_, i) => {
+                  const milestoneNumber = stepData.adsWatchedFromSteps + i + 1;
+                  const stepsForMilestone = milestoneNumber * STEP_CONFIG.STEPS_PER_AD;
+                  return (
+                    <TouchableOpacity
+                      key={i}
+                      style={styles.milestoneButton}
+                      onPress={handleConvertSteps}
+                      disabled={converting}
+                    >
+                      <Text style={styles.milestoneSteps}>{(stepsForMilestone / 1000).toFixed(0)}k</Text>
+                      <Text style={styles.milestoneCredits}>+10 💰</Text>
+                      <View style={styles.milestoneWatch}>
+                        <Text style={styles.milestoneWatchText}>▶️</Text>
+                      </View>
+                    </TouchableOpacity>
+                  );
+                })}
               </View>
+              
+              {/* Main Convert Button */}
               <TouchableOpacity
                 style={styles.convertButton}
                 onPress={handleConvertSteps}
@@ -431,8 +500,9 @@ const StepsScreen = () => {
                   </Text>
                 </ExpoGradient>
               </TouchableOpacity>
+              
               <Text style={styles.convertHint}>
-                Convert {STEP_CONFIG.STEPS_PER_AD.toLocaleString()} steps per ad watched
+                {adsAvailable} {adsAvailable === 1 ? 'ad' : 'ads'} available • {(adsAvailable * STEP_CONFIG.CREDITS_PER_AD)} credits total
               </Text>
             </>
           ) : (
@@ -696,10 +766,65 @@ const createStyles = (colors: any) =>
       fontWeight: '700',
     },
     convertHint: {
-      fontSize: 12,
+      fontSize: 13,
       color: colors.textSecondary,
-      marginTop: spacing.sm,
+      marginTop: spacing.md,
       textAlign: 'center',
+      fontWeight: '500',
+    },
+    convertSubtitle: {
+      fontSize: 14,
+      color: colors.textSecondary,
+      marginBottom: spacing.md,
+      textAlign: 'center',
+    },
+    milestonesGrid: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      justifyContent: 'center',
+      gap: spacing.sm,
+      marginBottom: spacing.lg,
+    },
+    milestoneButton: {
+      backgroundColor: colors.backgroundCard,
+      borderRadius: borderRadius.lg,
+      padding: spacing.md,
+      alignItems: 'center',
+      minWidth: 80,
+      borderWidth: 2,
+      borderColor: '#10B98140',
+    },
+    milestoneSteps: {
+      fontSize: 16,
+      fontWeight: '700',
+      color: colors.textPrimary,
+    },
+    milestoneCredits: {
+      fontSize: 12,
+      color: '#10B981',
+      fontWeight: '600',
+      marginTop: 2,
+    },
+    milestoneWatch: {
+      marginTop: spacing.xs,
+      backgroundColor: '#10B98120',
+      borderRadius: borderRadius.full,
+      width: 28,
+      height: 28,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    milestoneWatchText: {
+      fontSize: 14,
+    },
+    loadingContainer: {
+      flex: 1,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    loadingText: {
+      fontSize: 18,
+      color: colors.textSecondary,
     },
     noAdsContainer: {
       backgroundColor: colors.backgroundCard,
