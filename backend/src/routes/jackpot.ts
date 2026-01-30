@@ -1,12 +1,12 @@
 import { Router, Response, NextFunction } from 'express';
 import pool from '../db';
-import { authenticateToken, AuthRequest } from '../middleware/auth';
+import { authenticate, AuthRequest } from '../middleware/auth';
 import { createError } from '../middleware/errorHandler';
 
 const router = Router();
 
 // All jackpot routes require authentication
-router.use(authenticateToken);
+router.use(authenticate);
 
 // Jackpot configuration
 const JACKPOT_CONFIG = {
