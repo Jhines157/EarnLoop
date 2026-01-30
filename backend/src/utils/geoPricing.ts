@@ -79,7 +79,7 @@ export async function getCountryFromIP(ip: string): Promise<string | null> {
     const response = await fetch(`http://ip-api.com/json/${cleanIP}?fields=countryCode`);
     if (!response.ok) return null;
     
-    const data = await response.json();
+    const data = await response.json() as { countryCode?: string };
     return data.countryCode || null;
   } catch (error) {
     console.error('Failed to get country from IP:', error);
