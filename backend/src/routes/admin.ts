@@ -380,6 +380,121 @@ router.post('/users/:id/set-geo', async (req: Request, res: Response, next: Next
   }
 });
 
+// Bulk fix geo data using activity_logs IPs (more reliable than device IPs)
+router.post('/fix-geo-from-activity', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    // Get all users and their most recent activity IP
+    const usersResult = await pool.query(`
+      SELECT DISTINCT ON (u.id) 
+        u.id, 
+        u.email, 
+        u.country_code,
+        u.pricing_tier,
+        a.ip_address
+      FROM users u
+      LEFT JOIN activity_logs a ON a.user_id = u.id AND a.ip_address IS NOT NULL
+      ORDER BY u.id, a.created_at DESC
+    `);
+
+    const results: Array<{ 
+      email: string; 
+      oldCountry: string | null;
+      oldTier: number | null;
+      newCountry: string | null; 
+      newTier: number; 
+      ip: string | null;
+      status: string;
+    }> = [];
+
+    let updated = 0;
+    let skipped = 0;
+    let failed = 0;
+
+    for (const user of usersResult.rows) {
+      // Skip if no IP in activity logs
+      if (!user.ip_address) {
+        results.push({
+          email: user.email,
+          oldCountry: user.country_code,
+          oldTier: user.pricing_tier,
+          newCountry: null,
+          newTier: 3,
+          ip: null,
+          status: 'no_ip',
+        });
+        skipped++;
+        continue;
+      }
+
+      // Skip private/internal IPs
+      if (user.ip_address.startsWith('10.') || 
+          user.ip_address.startsWith('172.') || 
+          user.ip_address.startsWith('192.168.') ||
+          user.ip_address === '127.0.0.1') {
+        results.push({
+          email: user.email,
+          oldCountry: user.country_code,
+          oldTier: user.pricing_tier,
+          newCountry: null,
+          newTier: 3,
+          ip: user.ip_address.substring(0, 8) + '...',
+          status: 'private_ip',
+        });
+        skipped++;
+        continue;
+      }
+
+      try {
+        const countryCode = await getCountryFromIP(user.ip_address);
+        const pricingTier = getTierForCountry(countryCode);
+
+        // Update user with detected country
+        await pool.query(
+          'UPDATE users SET country_code = $1, pricing_tier = $2 WHERE id = $3',
+          [countryCode, pricingTier, user.id]
+        );
+
+        results.push({
+          email: user.email,
+          oldCountry: user.country_code,
+          oldTier: user.pricing_tier,
+          newCountry: countryCode,
+          newTier: pricingTier,
+          ip: user.ip_address.substring(0, 8) + '...',
+          status: 'updated',
+        });
+        updated++;
+      } catch (err) {
+        console.error(`Failed to get country for ${user.email}:`, err);
+        results.push({
+          email: user.email,
+          oldCountry: user.country_code,
+          oldTier: user.pricing_tier,
+          newCountry: null,
+          newTier: 3,
+          ip: user.ip_address.substring(0, 8) + '...',
+          status: 'lookup_failed',
+        });
+        failed++;
+      }
+
+      // Small delay to avoid rate limiting from ip-api.com (free tier: 45/min)
+      await new Promise(resolve => setTimeout(resolve, 1500));
+    }
+
+    res.json({
+      success: true,
+      data: {
+        message: `Geo fix complete: ${updated} updated, ${skipped} skipped, ${failed} failed`,
+        summary: { updated, skipped, failed, total: usersResult.rows.length },
+        users: results,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 // Get store items status
 router.get('/store-items', async (req: Request, res: Response, next: NextFunction) => {
   try {
