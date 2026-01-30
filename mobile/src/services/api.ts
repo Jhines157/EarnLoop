@@ -285,6 +285,79 @@ class ApiClient {
     });
   }
 
+  async getGiveawayCurrent() {
+    return this.request<{
+      giveaways: Array<{
+        id: string;
+        name: string;
+        prizeType: string;
+        prizeValue: number;
+        prizeDescription: string;
+        frequency: string;
+        totalParticipants: number;
+        totalEntries: number;
+        endsAt: string;
+        userEntries: {
+          free: number;
+          bonus: number;
+          paid: number;
+          total: number;
+        };
+      }>;
+    }>('/giveaway/current');
+  }
+
+  // Jackpot endpoints
+  async getJackpotInfo() {
+    return this.request<{
+      poolTokens: number;
+      totalContributed: number;
+      totalWon: number;
+      lastWinner: {
+        email: string;
+        amount: number;
+        wonAt: string;
+      } | null;
+      userTokens: number;
+      config: {
+        minBet: number;
+        maxBet: number;
+      };
+      recentBigWins: Array<{
+        email: string;
+        multiplier: number;
+        winAmount: number;
+        betAmount: number;
+        createdAt: string;
+      }>;
+      myHistory: Array<{
+        betAmount: number;
+        multiplier: number;
+        winAmount: number;
+        netResult: number;
+        isJackpot: boolean;
+        createdAt: string;
+      }>;
+    }>('/jackpot/info');
+  }
+
+  async spinJackpot(betAmount: number) {
+    return this.request<{
+      betAmount: number;
+      multiplier: number;
+      winAmount: number;
+      jackpotBonus?: number;
+      netResult: number;
+      isJackpot: boolean;
+      newBalance: number;
+      newPoolTokens: number;
+      message: string;
+    }>('/jackpot/spin', {
+      method: 'POST',
+      body: JSON.stringify({ betAmount }),
+    });
+  }
+
   // Password reset endpoints
   async forgotPassword(email: string) {
     return this.request<{ message: string }>('/auth/forgot-password', {

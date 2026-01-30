@@ -334,6 +334,51 @@ const migrate = async () => {
     `);
     console.log('✅ redemptions metadata column added');
 
+    // Jackpot pool table (tracks the global pool contributed by all users)
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS jackpot_pool (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        pool_tokens INTEGER DEFAULT 0,
+        total_contributed INTEGER DEFAULT 0,
+        total_won INTEGER DEFAULT 0,
+        last_jackpot_winner_id UUID REFERENCES users(id) ON DELETE SET NULL,
+        last_jackpot_won_at TIMESTAMP WITH TIME ZONE,
+        last_jackpot_amount INTEGER DEFAULT 0,
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+      );
+    `);
+    console.log('✅ jackpot_pool table created');
+
+    // Initialize jackpot pool with starting amount if empty
+    await pool.query(`
+      INSERT INTO jackpot_pool (id, pool_tokens)
+      SELECT '00000000-0000-0000-0000-000000000001', 10000
+      WHERE NOT EXISTS (SELECT 1 FROM jackpot_pool);
+    `);
+    console.log('✅ jackpot_pool initialized');
+
+    // Jackpot spins history
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS jackpot_spins (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+        bet_amount INTEGER NOT NULL,
+        multiplier DECIMAL(5,2) NOT NULL,
+        win_amount INTEGER NOT NULL,
+        net_result INTEGER NOT NULL,
+        is_jackpot BOOLEAN DEFAULT FALSE,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+      );
+    `);
+    console.log('✅ jackpot_spins table created');
+
+    // Index for spin queries
+    await pool.query(`
+      CREATE INDEX IF NOT EXISTS idx_jackpot_spins_user ON jackpot_spins (user_id, created_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_jackpot_spins_jackpot ON jackpot_spins (is_jackpot) WHERE is_jackpot = true;
+    `);
+    console.log('✅ jackpot indexes created');
+
     console.log('🎉 All migrations completed successfully!');
   } catch (error) {
     console.error('❌ Migration failed:', error);

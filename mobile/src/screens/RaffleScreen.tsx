@@ -67,6 +67,7 @@ const RaffleScreen = () => {
 
   useEffect(() => {
     loadGiveawayData();
+    loadJackpotInfo();
   }, []);
 
   const loadGiveawayData = async () => {
@@ -104,16 +105,23 @@ const RaffleScreen = () => {
     }
   };
   
-  // Refresh giveaway data periodically to get updated participant counts
+  // Load jackpot info from server
+  const loadJackpotInfo = async () => {
+    try {
+      const response = await api.getJackpotInfo();
+      if (response.success && response.data) {
+        setJackpotPool(response.data.poolTokens);
+      }
+    } catch (error) {
+      console.error('Failed to load jackpot info:', error);
+    }
+  };
+  
+  // Refresh data periodically
   useEffect(() => {
     const interval = setInterval(() => {
-      // Refresh giveaway data every 30 seconds
       loadGiveawayData();
-      
-      // Occasionally increase jackpot pool (simulated until backend support)
-      if (Math.random() > 0.8) {
-        setJackpotPool(prev => prev + Math.floor(Math.random() * 100) + 50);
-      }
+      loadJackpotInfo();
     }, 30000);
     
     return () => clearInterval(interval);
@@ -138,8 +146,8 @@ const RaffleScreen = () => {
     // Simulate spin animation delay
     await new Promise(resolve => setTimeout(resolve, 2000));
     
-    // Call the backend API to spend tokens and get result
-    const response = await api.spendTokens('jackpot_spin', jackpotBet);
+    // Call the real jackpot API
+    const response = await api.spinJackpot(jackpotBet);
     
     if (!response.success || !response.data) {
       setIsSpinning(false);
@@ -147,40 +155,33 @@ const RaffleScreen = () => {
       return;
     }
     
-    const { multiplier, tokensWon, message, newTokenBalance } = response.data;
+    const { multiplier, winAmount, netResult, isJackpot, newBalance, newPoolTokens, message, jackpotBonus } = response.data;
     
     // Update local state with server values
-    updateTokens(newTokenBalance);
+    updateTokens(newBalance);
+    setJackpotPool(newPoolTokens);
     
-    if (multiplier === 10) {
+    if (isJackpot) {
       // JACKPOT WIN!
-      setLastResult({ multiplier: -1, winnings: tokensWon });
-      setJackpotPool(JACKPOT_CONFIG.jackpotPool); // Reset pool
+      setLastResult({ multiplier: 10, winnings: winAmount });
       setIsSpinning(false);
-      Alert.alert('🎰 JACKPOT!!! 🎰', `YOU WON THE JACKPOT!\n\n+${tokensWon.toLocaleString()} TOKENS!`, [
+      Alert.alert('🎰 JACKPOT!!! 🎰', `YOU HIT 10x!\n\n+${winAmount.toLocaleString()} TOKENS!${jackpotBonus ? `\n(Includes ${jackpotBonus} bonus from pool!)` : ''}`, [
         { text: 'Amazing!', style: 'default' }
       ]);
       return;
     }
     
-    const netChange = tokensWon - jackpotBet;
-    
-    // Add losses to jackpot pool (visual only)
-    if (netChange < 0) {
-      setJackpotPool(prev => prev + Math.abs(netChange));
-    }
-    
-    setLastResult({ multiplier, winnings: tokensWon });
+    setLastResult({ multiplier, winnings: winAmount });
     setIsSpinning(false);
     
     if (multiplier === 0) {
       Alert.alert('💔 No Luck', `You lost ${jackpotBet} tokens. Better luck next time!`);
     } else if (multiplier < 1) {
-      Alert.alert('😅 Partial Return', `You got ${tokensWon} tokens back (${multiplier}x)`);
+      Alert.alert('😅 Partial Return', `You got ${winAmount} tokens back (${multiplier}x)`);
     } else if (multiplier === 1) {
       Alert.alert('😌 Break Even', `You got your ${jackpotBet} tokens back!`);
     } else {
-      Alert.alert(`🎉 ${multiplier}x WIN!`, `You won ${tokensWon} tokens! (+${netChange} profit)`);
+      Alert.alert(`🎉 ${multiplier}x WIN!`, `You won ${winAmount} tokens! (+${netResult} profit)`);
     }
   };
 

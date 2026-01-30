@@ -13,6 +13,7 @@ import earnRoutes from './routes/earn';
 import storeRoutes from './routes/store';
 import userRoutes from './routes/user';
 import giveawayRoutes from './routes/giveaway';
+import jackpotRoutes from './routes/jackpot';
 import { checkScheduledDraws } from './utils/drawSystem';
 
 let adminRoutes: any;
@@ -77,6 +78,7 @@ app.use('/earn', earnRoutes);
 app.use('/store', storeRoutes);
 app.use('/me', userRoutes);
 app.use('/giveaway', giveawayRoutes);
+app.use('/jackpot', jackpotRoutes);
 if (adminRoutes) {
   app.use('/admin', adminRoutes);
 }
